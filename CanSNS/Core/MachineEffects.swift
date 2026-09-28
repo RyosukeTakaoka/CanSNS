@@ -95,6 +95,13 @@ extension AppDatabase {
         return streak
     }
 
+    /// 今の連続納品日数（今日まだ誰も納品していなければ、昨日までの日数）
+    func currentStreak(machineID: String, today: BusinessDay, clock: BusinessClock) -> Int {
+        let streak = deliveryStreak(machineID: machineID, endingAt: today, clock: clock)
+        if streak > 0 { return streak }
+        return deliveryStreak(machineID: machineID, endingAt: clock.day(today, offsetBy: -1), clock: clock)
+    }
+
     /// その営業日に達成している演出の一覧
     func effects(machineID: String, day: BusinessDay, clock: BusinessClock) -> [MachineEffect] {
         guard let machine = self.machine(machineID) else { return [] }

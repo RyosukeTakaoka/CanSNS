@@ -44,7 +44,10 @@ struct CanContentView: View {
                 }
                 if !isAuthor {
                     if isDisposed {
-                        Label("この缶は廃棄済みです（冷蔵庫で保存中）", systemImage: "refrigerator")
+                        Label(store.db.isInFridge(canID: can.id, ownerID: me)
+                              ? "この缶は廃棄済みです（冷蔵庫で保存中）"
+                              : "この缶は廃棄済みです",
+                              systemImage: "refrigerator")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
@@ -62,6 +65,7 @@ struct CanContentView: View {
         }
         .task(id: initialCan.id) {
             loadError = await store.loadContentIfNeeded(can)
+            await store.loadActivitiesIfNeeded(can)
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(can.title)
@@ -470,6 +474,8 @@ struct AuthorSummaryView: View {
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // 手紙の紙はクリーム色で固定なので、文字も黒で固定（ダークモードでも読める）
+                        .foregroundStyle(Pixel.ink)
                         .background(Theme.paper, in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
@@ -610,14 +616,21 @@ struct LetterSheet: View {
 
             if let letter = store.db.letter(canID: can.id, from: store.currentUserID ?? "") {
                 Text(letter.text)
+                    .foregroundStyle(Pixel.ink)
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
                 Label("投函ずみ", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                TextField("ひとこと（\(Letter.textLimit)文字まで）", text: $text, axis: .vertical)
+                TextField(text: $text,
+                          prompt: Text("ひとこと（\(Letter.textLimit)文字まで）").foregroundColor(Pixel.ink.opacity(0.45)),
+                          axis: .vertical) {
+                    Text("ひとこと")
+                }
                     .lineLimit(2...3)
+                    .foregroundStyle(Pixel.ink)
+                    .tint(Pixel.ink)
                     .padding()
                     .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
                     .onChange(of: text) { _, newValue in

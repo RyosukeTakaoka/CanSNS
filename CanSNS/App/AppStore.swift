@@ -265,7 +265,18 @@ final class AppStore {
 
     func open(_ can: CanPost) throws {
         guard let userID = currentUserID else { throw CanSNSError.userNotFound }
+        // Firebase モードでは、サーバーから中身を受け取れた＝サーバーの時計でも開店している、を確かめてから記録する
+        // （端末の時計が進んでいると、開けていないのに「開けました」と通知されてしまうため）
+        if mode == .cloud, db.can(can.id)?.isContentHidden ?? true {
+            throw CanSNSError.notOpenYet
+        }
         try perform { try $0.open(canID: can.id, userID: userID, now: now, clock: clock) }
+    }
+
+    /// 自分の缶の開封・リアクションを取りに行く（Firebase モードで、最近8日より前の缶を見るとき用）
+    func loadActivitiesIfNeeded(_ can: CanPost) async {
+        guard mode == .cloud, let cloud, can.authorID == currentUserID else { return }
+        await cloud.loadActivities(canID: can.id, machineID: can.machineID)
     }
 
     /// Firebase モードで、まだ受け取っていない缶の中身をサーバーから受け取る。
@@ -299,19 +310,20 @@ final class AppStore {
 
     func toggleReaction(_ kind: ReactionKind, on can: CanPost) {
         guard let userID = currentUserID else { return }
-        perform { $0.toggleReaction(canID: can.id, userID: userID, kind: kind, now: now) }
+        perform { $0.toggleReaction(canID: can.id, userID: userID, kind: kind, now: now, today: today) }
     }
 
     func sendStraw(on can: CanPost, threadUserID: String, text: String) throws {
         guard let userID = currentUserID else { throw CanSNSError.userNotFound }
         try perform {
-            try $0.sendStraw(canID: can.id, threadUserID: threadUserID, senderID: userID, text: text, now: now)
+            try $0.sendStraw(canID: can.id, threadUserID: threadUserID, senderID: userID, text: text, now: now,
+                             today: today)
         }
     }
 
     func sendLetter(on can: CanPost, text: String) throws {
         guard let userID = currentUserID else { throw CanSNSError.userNotFound }
-        try perform { try $0.sendLetter(canID: can.id, fromID: userID, text: text, now: now) }
+        try perform { try $0.sendLetter(canID: can.id, fromID: userID, text: text, now: now, today: today) }
     }
 
     func saveToFridge(_ can: CanPost) throws {

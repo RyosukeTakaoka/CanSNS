@@ -113,12 +113,19 @@ extension View {
     func card() -> some View { modifier(CardBackground()) }
 }
 
+/// 時刻の表示（開店・廃棄のルールと合わせて、日本時間で表示する）
 enum DateText {
+    private static let japan = TimeZone(identifier: "Asia/Tokyo") ?? .current
+
     static func time(_ date: Date) -> String {
-        date.formatted(.dateTime.hour().minute())
+        var style = Date.FormatStyle.dateTime.hour().minute()
+        style.timeZone = japan
+        return date.formatted(style)
     }
 
     static func monthDayTime(_ date: Date) -> String {
-        date.formatted(.dateTime.month().day().hour().minute())
+        var style = Date.FormatStyle.dateTime.month().day().hour().minute()
+        style.timeZone = japan
+        return date.formatted(style)
     }
 }

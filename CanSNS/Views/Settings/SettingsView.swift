@@ -74,7 +74,7 @@ struct SettingsView: View {
         if let machine = store.currentMachine {
             let total = store.db.totalCans(in: machine.id)
             let level = MachineGrowth.level(totalCans: total)
-            let streak = store.db.deliveryStreak(machineID: machine.id, endingAt: store.today, clock: store.clock)
+            let streak = store.db.currentStreak(machineID: machine.id, today: store.today, clock: store.clock)
             Section("自販機") {
                 LabeledContent("名前", value: machine.name)
                 VStack(alignment: .leading, spacing: 6) {
@@ -260,14 +260,16 @@ struct EmojiGrid: View {
                     Text(emoji)
                         .font(.title)
                         .frame(width: 48, height: 48)
-                        .background(
-                            Circle().fill(selection == emoji ? Color.accentColor.opacity(0.2) : Color.clear)
-                        )
-                        .overlay(
-                            Circle().strokeBorder(selection == emoji ? Color.accentColor : Color.clear, lineWidth: 2)
-                        )
+                        .background {
+                            // 選んだものは黄色いドット絵の枠（暗いウィンドウの上でも白い画面でも見える）
+                            if selection == emoji {
+                                PixelFrame(fill: Pixel.yellow, border: Pixel.ink, borderWidth: 2, step: 3)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(emoji)
+                .accessibilityAddTraits(selection == emoji ? [.isSelected] : [])
             }
         }
     }

@@ -107,6 +107,8 @@ service cloud.firestore {
             getAfter(/databases/$(database)/documents/machines/$(machineId)).data.ownerId == me()
             || request.resource.data.inviteCode == get(/databases/$(database)/documents/machines/$(machineId)).data.inviteCode
           );
+        // 自分の参加の取り消し（満員だったときなど）
+        allow delete: if signedIn() && me() == uid;
       }
 
       // 缶のラベル（商品名・気分・柄）：メンバーならいつでも見られる

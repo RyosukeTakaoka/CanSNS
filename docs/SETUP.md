@@ -67,6 +67,8 @@ Firebase とアプリを結びつけるための「アプリのID」です。
 3. **「本番環境モードで開始」** を選ぶ → 作成
 4. できたら上の **「ルール」** タブを開く
 5. 中身を全部消して、このリポジトリの **`firebase/firestore.rules` の内容を全部コピーして貼り付け** → **「公開」**
+   - ルールの中に Cloudinary の cloud name（`dw71feikq`）が書いてあります。別の cloud name を使うときは、そこも書きかえてください
+   - アプリを更新したときにルールも変わっていることがあります。`firebase/firestore.rules` が変わったら、もう一度貼り付けて「公開」してください
 
 > Firebase の「Storage」は使いません（写真などは Cloudinary に置きます）。
 

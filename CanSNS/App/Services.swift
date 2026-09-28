@@ -64,6 +64,30 @@ enum VideoUtil {
         let time = (try? await asset.load(.duration)) ?? .zero
         return time.seconds.isFinite ? time.seconds : 0
     }
+
+    /// 動画を 720p 程度の mp4 に小さくする（そのままだと 4K 動画などが大きすぎて送れないため）。
+    /// 失敗したら nil（そのときは元の動画を使う）
+    static func compressed(_ source: URL) async -> URL? {
+        let asset = AVURLAsset(url: source)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset1280x720) else {
+            return nil
+        }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        session.shouldOptimizeForNetworkUse = true
+        if #available(iOS 18, *) {
+            do {
+                try await session.export(to: output, as: .mp4)
+                return output
+            } catch {
+                return nil
+            }
+        } else {
+            session.outputURL = output
+            session.outputFileType = .mp4
+            await session.export()
+            return session.status == .completed ? output : nil
+        }
+    }
 }
 
 /// PhotosPicker から動画を受け取るための型
@@ -142,6 +166,8 @@ enum NotificationScheduler {
             content.body = item.body
             content.sound = .default
             var components = DateComponents()
+            // 開店・廃棄は日本時間なので、お知らせの時刻も日本時間で決める
+            components.timeZone = TimeZone(identifier: "Asia/Tokyo")
             components.hour = item.hour
             components.minute = item.minute
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
@@ -210,7 +236,8 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         isRecording = true
         elapsed = 0
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self, let recorder = self.recorder else { return }
+            // 止まったあとは currentTime が 0 に戻るので、録音中のときだけ更新する
+            guard let self, let recorder = self.recorder, recorder.isRecording else { return }
             self.elapsed = recorder.currentTime
         }
     }
@@ -227,7 +254,8 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 self.recordedFileName = name
             }
             self.pendingFileName = nil
-            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+            // 効果音用の設定（マナーモードでは鳴らない）に戻す
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
         }
     }
 }
@@ -279,6 +307,8 @@ final class AudioPlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
             progress = 0
             player?.currentTime = 0
         }
+        // 効果音用の設定（マナーモードでは鳴らない）に戻す
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
     }
 }
 

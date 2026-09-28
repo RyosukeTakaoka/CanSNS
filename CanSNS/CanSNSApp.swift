@@ -56,7 +56,8 @@ struct MainTabView: View {
             SettingsView()
                 .tabItem { Label("設定", systemImage: "gearshape.fill") }
         }
-        .tint(Theme.machineBody)
+        // 強調色は青（赤はドット絵の自販機と「削除」だけに使う）
+        .tint(Pixel.blue)
         .toast(Binding(get: { store.syncMessage }, set: { store.syncMessage = $0 }))
     }
 }
@@ -64,16 +65,18 @@ struct MainTabView: View {
 /// Firebase に接続しているあいだの画面
 struct LaunchView: View {
     @Environment(AppStore.self) private var store
+    @State private var sceneDate = Date()
 
     var body: some View {
         ZStack {
-            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+            SkyBackgroundView(date: store.adjusted(sceneDate), calendar: store.clock.calendar)
                 .ignoresSafeArea()
             VStack(spacing: 16) {
                 CanView(title: "CanSNS", mood: .cold, kind: .text, pattern: .stripe, emoji: "🥫", width: 70)
-                ProgressView("自販機に電気を入れています…")
-                    .tint(.white)
-                    .foregroundStyle(.white)
+                Text("自販機に電気を入れています…")
+                    .font(.pixel(16))
+                    .pixelWindow()
+                    .fixedSize()
             }
         }
     }

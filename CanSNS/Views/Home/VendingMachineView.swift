@@ -59,9 +59,9 @@ struct VendingMachineView: View {
     var level: Int
     var effects: [MachineEffect]
     var digits: String
+    /// 1秒ごとに切り替わる点滅（ネオンや NEW バッジ）。ファミコンのようにカチッと点滅させる
+    var blinkOn: Bool = true
     var onTap: (MachineSlot) -> Void
-
-    @State private var neonPhase = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 4)
     private let canWidth: CGFloat = 36
@@ -76,11 +76,6 @@ struct VendingMachineView: View {
             feet
         }
         .frame(maxWidth: 340)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
-                neonPhase = true
-            }
-        }
     }
 
     // MARK: - 本体
@@ -90,8 +85,11 @@ struct VendingMachineView: View {
             sign
             HStack(alignment: .top, spacing: 8) {
                 display
+                    .frame(maxHeight: .infinity)
                 sidePanel
             }
+            // ショーケースと右のパネルの高さをそろえる
+            .fixedSize(horizontal: false, vertical: true)
             outletRow
         }
         .padding(12)
@@ -127,7 +125,7 @@ struct VendingMachineView: View {
             // 限定ネオン：縁がピンクと水色に点滅する
             if hasNeon {
                 PixelBox(step: 6)
-                    .stroke(neonPhase ? Color.pink : Color.cyan, lineWidth: 4)
+                    .stroke(blinkOn ? Color.pink : Color.cyan, lineWidth: 4)
                     .padding(-4)
             }
         }
@@ -190,7 +188,7 @@ struct VendingMachineView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             PixelFrame(fill: isOpenPhase ? Color(hex: 0xF4FBFF) : Color(hex: 0xC9D3DF), border: Pixel.ink,
                        borderWidth: 4, step: 3)
@@ -211,7 +209,7 @@ struct VendingMachineView: View {
                     CanView(can: can, emoji: author.emoji, width: canWidth)
                         .overlay(alignment: .topTrailing) {
                             if slot.isNew {
-                                NewBadge()
+                                NewBadge(blinkOn: blinkOn)
                                     .offset(x: 10, y: -6)
                             }
                         }
@@ -234,13 +232,14 @@ struct VendingMachineView: View {
                         .foregroundStyle(Pixel.ink.opacity(0.4))
                 }
             }
-            .frame(height: 12)
+            .frame(height: 14)
 
             Text(ownerName(slot))
                 .font(.pixel(9, fixed: true))
                 .foregroundStyle(Pixel.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.85)
+                .truncationMode(.tail)
                 .padding(.horizontal, 2)
 
             // 押しボタンのランプ
@@ -255,6 +254,8 @@ struct VendingMachineView: View {
                 .overlay(Rectangle().strokeBorder(Pixel.ink, lineWidth: 1.5))
                 .padding(.horizontal, 3)
         }
+        // 缶のまわりの余白もタップできるようにする
+        .contentShape(Rectangle())
     }
 
     private func ownerName(_ slot: MachineSlot) -> String {
@@ -319,6 +320,8 @@ struct VendingMachineView: View {
                 .foregroundStyle(.white)
         }
         .frame(width: sidePanelWidth)
+        // 飾りなので読み上げない
+        .accessibilityHidden(true)
     }
 
     // MARK: - 取り出し口
@@ -348,6 +351,7 @@ struct VendingMachineView: View {
                 .frame(width: 22, height: 22)
                 .frame(width: sidePanelWidth)
         }
+        .accessibilityHidden(true)
     }
 
     // MARK: - 脚
@@ -362,23 +366,18 @@ struct VendingMachineView: View {
     }
 }
 
-/// 新しく納品された缶につく「NEW」バッジ（チカチカ点滅する）
+/// 新しく納品された缶につく「NEW」バッジ（1秒ごとに色が入れかわって点滅する）
 struct NewBadge: View {
-    @State private var blink = false
+    var blinkOn: Bool = true
 
     var body: some View {
         Text("NEW")
-            .font(.pixel(8, fixed: true))
-            .foregroundStyle(.white)
+            .font(.pixel(9, fixed: true))
+            .foregroundStyle(blinkOn ? Color.white : Theme.machineBody)
             .padding(.horizontal, 3)
             .padding(.vertical, 1)
-            .background(Color(hex: 0xE0282E))
-            .overlay(Rectangle().strokeBorder(Color.white, lineWidth: 1.5))
-            .opacity(blink ? 1 : 0.55)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                    blink = true
-                }
-            }
+            .background(blinkOn ? Theme.machineBody : Color.white)
+            .overlay(Rectangle().strokeBorder(Pixel.ink, lineWidth: 1.5))
+            .accessibilityLabel("新着")
     }
 }

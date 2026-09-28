@@ -3,7 +3,7 @@ import SwiftUI
 /// 自販機の後ろの背景（8bit のドット絵）。
 /// アプリアイコンと同じ「田んぼの中の自販機」の風景で、時刻によって空の色・星・窓明かりが変わる。
 /// すべて四角形だけで描いている。
-struct SkyBackgroundView: View {
+struct SkyBackgroundView: View, Equatable {
     var date: Date
     var calendar: Calendar
 

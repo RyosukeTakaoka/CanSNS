@@ -27,13 +27,17 @@ struct OpenFlowView: View {
     @State private var showBubbles = false
     @State private var hintPulse = false
     @State private var errorMessage: String?
+    /// 背景の時刻（スワイプのたびに背景を描き直さないように固定する）
+    @State private var sceneDate = Date()
+    /// 開ける処理の途中（連打で2回開けないように）
+    @State private var isOpening = false
 
     private var author: UserProfile? { store.user(can.authorID) }
 
     var body: some View {
         ZStack {
             // 夜の田んぼの風景を暗くして背景にする（缶と取り出し口が目立つように）
-            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+            SkyBackgroundView(date: store.adjusted(sceneDate), calendar: store.clock.calendar)
                 .overlay(Color.black.opacity(0.45))
                 .ignoresSafeArea()
 
@@ -85,12 +89,14 @@ struct OpenFlowView: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(12)
-                            .background(.white.opacity(0.15), in: Circle())
+                        Text("×")
+                            .font(.pixel(22, fixed: true))
+                            .foregroundStyle(Pixel.windowBorder)
+                            .frame(width: 44, height: 44)
+                            .background(PixelFrame(fill: Pixel.windowFill, border: Pixel.windowBorder,
+                                                   borderWidth: 3, step: 3))
                     }
+                    .accessibilityLabel("とじる")
                     Spacer()
                 }
                 roulette
@@ -269,12 +275,27 @@ struct OpenFlowView: View {
     }
 
     private func openCan() {
-        do {
-            try store.open(can)
-        } catch {
-            errorMessage = error.localizedDescription
-            return
+        guard !isOpening else { return }
+        isOpening = true
+        Task {
+            // Firebase モードでは、サーバーから中身を受け取れてから開ける（缶が落ちている間に受け取り始めている）
+            if let reason = await store.loadContentIfNeeded(can) {
+                errorMessage = reason
+                isOpening = false
+                return
+            }
+            do {
+                try store.open(can)
+            } catch {
+                errorMessage = error.localizedDescription
+                isOpening = false
+                return
+            }
+            playOpening()
         }
+    }
+
+    private func playOpening() {
         store.markSeen(can)
         stage = .opening
         SoundPlayer.shared.play(.pshu)

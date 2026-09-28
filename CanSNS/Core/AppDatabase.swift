@@ -17,6 +17,7 @@ enum CanSNSError: LocalizedError, Equatable {
     case emptyContent
     case letterAlreadySent
     case emptyMessage
+    case closingSoon
 
     var errorDescription: String? {
         switch self {
@@ -35,7 +36,21 @@ enum CanSNSError: LocalizedError, Equatable {
         case .emptyContent: "缶の中身を入れてください"
         case .letterAlreadySent: "この缶にはもう手紙を入れました"
         case .emptyMessage: "メッセージを入力してください"
+        case .closingSoon: "まもなく6:00の廃棄時刻です。6:00をすぎてから納品してください"
         }
+    }
+}
+
+/// 招待コード（6文字。見間違えやすい 0/O, 1/I/L は使わない）
+enum InviteCode {
+    static let characters: [Character] = Array("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
+    static let length = 6
+
+    /// 入力をととのえる（前後の空白を消して大文字に）。形が正しくなければ nil
+    static func normalize(_ raw: String) -> String? {
+        let code = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard code.count == length, code.allSatisfy({ characters.contains($0) }) else { return nil }
+        return code
     }
 }
 
@@ -45,6 +60,8 @@ enum MachineRules {
     static let minimumMembersToOpen = 2
     /// 1台の自販機に入れる最大人数
     static let maxMembers = 8
+    /// 廃棄（翌6:00）の何分前から納品を止めるか（送信中に6:00をまたいで失敗しないように）
+    static let closingBufferMinutes = 5
     // 1日に納品できる缶の数に上限はない
 }
 
@@ -223,7 +240,7 @@ struct AppDatabase: Codable {
 
     @discardableResult
     mutating func joinMachine(inviteCode: String, userID: String, now: Date) throws -> Machine {
-        let code = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard let code = InviteCode.normalize(inviteCode) else { throw CanSNSError.invalidInviteCode }
         guard let index = machines.firstIndex(where: { $0.inviteCode == code }) else {
             throw CanSNSError.invalidInviteCode
         }
@@ -243,6 +260,10 @@ struct AppDatabase: Codable {
         guard let machine = self.machine(machineID) else { throw CanSNSError.machineNotFound }
         guard machine.isMember(authorID) else { throw CanSNSError.notMember }
         let today = clock.businessDay(for: now)
+        let secondsUntilDisposal = clock.disposalTime(of: today).timeIntervalSince(now)
+        guard secondsUntilDisposal >= Double(MachineRules.closingBufferMinutes * 60) else {
+            throw CanSNSError.closingSoon
+        }
 
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CanSNSError.emptyTitle }
@@ -292,23 +313,30 @@ struct AppDatabase: Codable {
                message: "\(name(of: userID))が「\(can.title)」を開けました", now: now)
     }
 
-    mutating func toggleReaction(canID: String, userID: String, kind: ReactionKind, now: Date) {
+    /// リアクションを付ける／外す。
+    /// - Parameter today: 渡すと、廃棄された缶にはリアクションできないようにする
+    mutating func toggleReaction(canID: String, userID: String, kind: ReactionKind, now: Date,
+                                 today: BusinessDay? = nil) {
+        if let today, let can = self.can(canID), can.businessDay < today { return }
         if let index = reactions.firstIndex(where: { $0.canID == canID && $0.userID == userID && $0.kind == kind }) {
             reactions.remove(at: index)
             return
         }
         reactions.append(Reaction(id: UUID().uuidString, canID: canID, userID: userID, kind: kind, createdAt: now))
         if let can = self.can(canID) {
+            // 付けたり外したりをくり返しても、同じリアクションのお知らせは1回だけ
             notify(can.authorID, actor: userID, kind: .reaction, canID: canID,
-                   message: "\(name(of: userID))から「\(can.title)」に\(kind.emoji)\(kind.label)", now: now)
+                   message: "\(name(of: userID))から「\(can.title)」に\(kind.emoji)\(kind.label)", now: now,
+                   id: "reaction-\(canID)-\(userID)-\(kind.rawValue)")
         }
     }
 
     mutating func sendStraw(canID: String, threadUserID: String, senderID: String,
-                            text: String, now: Date) throws {
+                            text: String, now: Date, today: BusinessDay? = nil) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw CanSNSError.emptyMessage }
         guard let can = self.can(canID) else { throw CanSNSError.disposed }
+        if let today, can.businessDay < today { throw CanSNSError.disposed }
         straws.append(StrawMessage(
             id: UUID().uuidString, canID: canID, threadUserID: threadUserID, senderID: senderID,
             text: String(trimmed.prefix(StrawMessage.textLimit)), createdAt: now
@@ -319,10 +347,12 @@ struct AppDatabase: Codable {
                message: "\(name(of: senderID))が「\(can.title)」にストローを差しました：\(trimmed.prefix(20))", now: now)
     }
 
-    mutating func sendLetter(canID: String, fromID: String, text: String, now: Date) throws {
+    mutating func sendLetter(canID: String, fromID: String, text: String, now: Date,
+                             today: BusinessDay? = nil) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw CanSNSError.emptyMessage }
         guard let can = self.can(canID) else { throw CanSNSError.disposed }
+        if let today, can.businessDay < today { throw CanSNSError.disposed }
         guard letter(canID: canID, from: fromID) == nil else { throw CanSNSError.letterAlreadySent }
         letters.append(Letter(
             id: UUID().uuidString, canID: canID, fromID: fromID, toID: can.authorID,
@@ -356,20 +386,20 @@ struct AppDatabase: Codable {
 
     // MARK: - 内部処理
 
+    /// - Parameter id: 決まった ID を渡すと、同じ ID のお知らせは2回目以降は作らない
     private mutating func notify(_ recipientID: String, actor actorID: String, kind: NotificationKind,
-                                 canID: String?, message: String, now: Date) {
+                                 canID: String?, message: String, now: Date, id: String? = nil) {
         guard recipientID != actorID else { return }
+        if let id, notifications.contains(where: { $0.id == id }) { return }
         notifications.append(AppNotification(
-            id: UUID().uuidString, recipientID: recipientID, actorID: actorID,
+            id: id ?? UUID().uuidString, recipientID: recipientID, actorID: actorID,
             kind: kind, canID: canID, message: message, createdAt: now
         ))
     }
 
     private func makeInviteCode() -> String {
-        // 見間違えやすい 0/O, 1/I/L は使わない
-        let characters = Array("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
         while true {
-            let code = String((0..<6).map { _ in characters.randomElement()! })
+            let code = String((0..<InviteCode.length).map { _ in InviteCode.characters.randomElement()! })
             if !machines.contains(where: { $0.inviteCode == code }) { return code }
         }
     }

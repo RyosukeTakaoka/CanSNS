@@ -38,7 +38,11 @@ struct FridgeView: View {
                 .padding(.vertical, 16)
             }
             .background(FridgeInteriorView().ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
+            // 上の帯は庫内と同じ明るい色で固定（ダークモードでも時計などが読めるように、文字は黒）
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: 0xEAF8FC), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .sheet(item: $selected) { can in
                 NavigationStack {
                     CanContentView(can: can)
@@ -73,7 +77,8 @@ struct FridgeView: View {
             Spacer(minLength: 0)
             // 冷蔵庫の温度表示（飾り）
             Text("4℃")
-                .font(.pixel(18))
+                .font(.pixel(18, fixed: true))
+                .accessibilityHidden(true)
                 .foregroundStyle(Color(hex: 0x7CF0FF))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -236,9 +241,10 @@ struct NotificationsView: View {
                 }
             }
             .navigationTitle("お知らせ")
-            .task {
-                // 1.5秒見たら既読にする
+            // 1.5秒見たら既読にする（すぐにタブを離れたら未読のまま。見ている間に届いた分も既読にする）
+            .task(id: store.unreadCount) {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
                 store.markAllRead()
             }
         }

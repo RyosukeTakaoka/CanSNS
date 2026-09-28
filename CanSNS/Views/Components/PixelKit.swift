@@ -166,7 +166,10 @@ struct PixelTextField: View {
     var monospaced: Bool = false
 
     var body: some View {
-        TextField(placeholder, text: $text)
+        // 入力欄は白で固定なので、ダークモードでも例文が読めるように色を決めておく
+        TextField(text: $text, prompt: Text(placeholder).foregroundColor(Pixel.ink.opacity(0.45))) {
+            Text(placeholder)
+        }
             .font(monospaced ? .pixel(22) : .pixel(17))
             .foregroundStyle(Pixel.ink)
             .tint(Pixel.ink)
@@ -187,6 +190,7 @@ struct PixelTabs<Value: Hashable>: View {
                 let option = options[index]
                 let selected = option.value == selection
                 Button {
+                    guard !selected else { return }
                     selection = option.value
                     SoundPlayer.shared.play(.tick)
                 } label: {
@@ -201,6 +205,7 @@ struct PixelTabs<Value: Hashable>: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
         }
     }
@@ -214,10 +219,24 @@ struct PixelHeading: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("★")
-                .font(.pixel(size * 0.8))
+                .font(.pixel(size * 0.8, fixed: true))
                 .foregroundStyle(Pixel.yellow)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.pixel(size))
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension View {
+    /// ドット絵の文字のふち取り（上下左右に1ドットずつ影を置く）。明るい空の上でも文字が読める。
+    func pixelOutline(_ color: Color = Pixel.ink, width: CGFloat = 1.5) -> some View {
+        self
+            .shadow(color: color, radius: 0, x: width, y: 0)
+            .shadow(color: color, radius: 0, x: -width, y: 0)
+            .shadow(color: color, radius: 0, x: 0, y: width)
+            .shadow(color: color, radius: 0, x: 0, y: -width)
     }
 }

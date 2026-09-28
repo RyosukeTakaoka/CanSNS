@@ -371,14 +371,21 @@ struct DeliverView: View {
     private func loadPicked(_ item: PhotosPickerItem) async {
         isLoading = true
         defer { isLoading = false }
+        // 読み込み中に「中身」の種類を変えられたら、読み込んだものは使わない
+        let kind = draft.kind
         do {
-            switch draft.kind {
+            switch kind {
             case .photo:
-                if let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                if let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data),
+                   draft.kind == kind {
                     savePhoto(image)
                 }
             case .video:
                 if let movie = try await item.loadTransferable(type: PickedMovie.self) {
+                    guard draft.kind == kind else {
+                        try? FileManager.default.removeItem(at: movie.url)
+                        return
+                    }
                     await saveVideo(from: movie.url)
                 }
             case .text, .voice:
@@ -406,7 +413,15 @@ struct DeliverView: View {
             errorMessage = "\(Int(VideoUtil.maxDuration))秒以内の動画にしてください（この動画は\(Int(duration))秒）"
             return
         }
-        guard let fileName = try? MediaStore.importFile(at: url, ext: "mov") else {
+        // 送る前に小さくする（失敗したら元の動画のまま）
+        let compressed = await VideoUtil.compressed(url)
+        let source = compressed ?? url
+        defer {
+            // 一時ファイルは片づける
+            if let compressed { try? FileManager.default.removeItem(at: compressed) }
+        }
+        let ext = source.pathExtension.isEmpty ? "mov" : source.pathExtension.lowercased()
+        guard let fileName = try? MediaStore.importFile(at: source, ext: ext) else {
             errorMessage = "動画を保存できませんでした"
             return
         }

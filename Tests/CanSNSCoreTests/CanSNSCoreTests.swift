@@ -417,3 +417,95 @@ final class CloudinaryTests: XCTestCase {
         XCTAssertThrowsError(try CloudinaryUploadResponse.secureURL(from: Data(), statusCode: 500))
     }
 }
+
+final class AuditFixTests: XCTestCase {
+    let clock = BusinessClock(timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+
+    func date(_ d: Int, _ h: Int, _ min: Int = 0) -> Date {
+        clock.calendar.date(from: DateComponents(year: 2026, month: 9, day: d, hour: h, minute: min))!
+    }
+
+    func draft() -> CanDraft {
+        var draft = CanDraft()
+        draft.title = "今日"
+        draft.text = "ひとこと"
+        return draft
+    }
+
+    func makeDB() throws -> (AppDatabase, UserProfile, UserProfile, Machine) {
+        var db = AppDatabase()
+        let a = db.createUser(name: "a", emoji: "🐱", now: date(1, 7))
+        let b = db.createUser(name: "b", emoji: "🐶", now: date(1, 7))
+        let machine = db.createMachine(name: "m", ownerID: a.id, now: date(1, 7))
+        try db.joinMachine(inviteCode: machine.inviteCode, userID: b.id, now: date(1, 8))
+        return (db, a, b, machine)
+    }
+
+    func testInviteCodeValidation() {
+        XCTAssertEqual(InviteCode.normalize(" abc234 "), "ABC234")
+        // スラッシュなどが入ると Firestore の文書パスが壊れるので、はじく
+        XCTAssertNil(InviteCode.normalize("ABC/DE"))
+        XCTAssertNil(InviteCode.normalize("ABC23"))
+        XCTAssertNil(InviteCode.normalize("ABC2345"))
+        // 見間違えやすい文字（O, 0, I, 1, L）は使わない
+        XCTAssertNil(InviteCode.normalize("ABCDE0"))
+        XCTAssertNil(InviteCode.normalize("ABCDEI"))
+        var db = AppDatabase()
+        let a = db.createUser(name: "a", emoji: "🐱", now: date(1, 7))
+        for _ in 0..<50 {
+            let machine = db.createMachine(name: "m", ownerID: a.id, now: date(1, 7))
+            XCTAssertEqual(InviteCode.normalize(machine.inviteCode), machine.inviteCode)
+        }
+        XCTAssertThrowsError(try db.joinMachine(inviteCode: "AB/CDE", userID: a.id, now: date(1, 8))) { error in
+            XCTAssertEqual(error as? CanSNSError, .invalidInviteCode)
+        }
+    }
+
+    func testNoDeliveryJustBeforeDisposal() throws {
+        var (db, a, _, machine) = try makeDB()
+        // 5:56 は廃棄の4分前なので止める
+        XCTAssertThrowsError(try db.deliver(draft(), authorID: a.id, machineID: machine.id,
+                                            now: date(29, 5, 56), clock: clock)) { error in
+            XCTAssertEqual(error as? CanSNSError, .closingSoon)
+        }
+        // 5:54 はまだ大丈夫
+        XCTAssertNoThrow(try db.deliver(draft(), authorID: a.id, machineID: machine.id,
+                                        now: date(29, 5, 54), clock: clock))
+    }
+
+    func testReactionNotificationOnlyOnce() throws {
+        var (db, a, b, machine) = try makeDB()
+        let can = try db.deliver(draft(), authorID: a.id, machineID: machine.id, now: date(28, 9), clock: clock)
+        for _ in 0..<6 {
+            db.toggleReaction(canID: can.id, userID: b.id, kind: .attakai, now: date(28, 22))
+        }
+        let reactionNotifications = db.notifications(for: a.id).filter { $0.kind == .reaction }
+        XCTAssertEqual(reactionNotifications.count, 1)
+        // 別の種類のリアクションは、別のお知らせになる
+        db.toggleReaction(canID: can.id, userID: b.id, kind: .tansan, now: date(28, 22))
+        XCTAssertEqual(db.notifications(for: a.id).filter { $0.kind == .reaction }.count, 2)
+    }
+
+    func testNoInteractionAfterDisposal() throws {
+        var (db, a, b, machine) = try makeDB()
+        let can = try db.deliver(draft(), authorID: a.id, machineID: machine.id, now: date(28, 9), clock: clock)
+        let nextDay = clock.businessDay(for: date(29, 7))
+        db.toggleReaction(canID: can.id, userID: b.id, kind: .okawari, now: date(29, 7), today: nextDay)
+        XCTAssertTrue(db.reactions(of: can.id).isEmpty)
+        XCTAssertThrowsError(try db.sendLetter(canID: can.id, fromID: b.id, text: "おそい", now: date(29, 7),
+                                               today: nextDay))
+        XCTAssertThrowsError(try db.sendStraw(canID: can.id, threadUserID: b.id, senderID: b.id, text: "おそい",
+                                              now: date(29, 7), today: nextDay))
+    }
+
+    func testCurrentStreakBeforeTodaysDelivery() throws {
+        var (db, a, _, machine) = try makeDB()
+        for d in 20...27 {
+            try db.deliver(draft(), authorID: a.id, machineID: machine.id, now: date(d, 9), clock: clock)
+        }
+        // 28日の朝、まだ誰も納品していなくても、昨日までの8日連続を表示する
+        let today = clock.businessDay(for: date(28, 7))
+        XCTAssertEqual(db.deliveryStreak(machineID: machine.id, endingAt: today, clock: clock), 0)
+        XCTAssertEqual(db.currentStreak(machineID: machine.id, today: today, clock: clock), 8)
+    }
+}

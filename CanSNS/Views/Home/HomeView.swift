@@ -67,6 +67,7 @@ struct HomeView: View {
                             level: MachineGrowth.level(totalCans: store.db.totalCans(in: machine.id)),
                             effects: effects,
                             digits: digits(for: today),
+                            blinkOn: Int(now.timeIntervalSince1970).isMultiple(of: 2),
                             onTap: { slot in handleTap(slot, me: me.id) }
                         )
                         deliverSection(myCans: myCans, me: me)
@@ -85,8 +86,9 @@ struct HomeView: View {
         let remaining = BusinessClock.countdownText(next.timeIntervalSince(now))
         return HStack(spacing: 10) {
             Text(phase == .open ? "★" : "☀")
-                .font(.pixel(26))
+                .font(.pixel(26, fixed: true))
                 .foregroundStyle(phase == .open ? Pixel.yellow : Color.orange)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(today.shortText)の自販機・\(phase.title)")
                     .font(.pixel(17))
@@ -121,7 +123,8 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
                 Text("→")
-                    .font(.pixel(16))
+                    .font(.pixel(16, fixed: true))
+                    .accessibilityHidden(true)
             }
             .pixelPaper(fill: Color(hex: 0xFFB347))
         }
@@ -139,7 +142,8 @@ struct HomeView: View {
             } label: {
                 Text(myCans.isEmpty ? "今日の缶を納品する" : "もう1本納品する")
             }
-            .buttonStyle(PixelButtonStyle(color: Theme.machineBody, fontSize: 18))
+            // 赤い自販機と見分けやすいように、コインのような黄色のボタン
+            .buttonStyle(PixelButtonStyle(color: Pixel.yellow, textColor: Pixel.ink, fontSize: 18))
 
             if !myCans.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {

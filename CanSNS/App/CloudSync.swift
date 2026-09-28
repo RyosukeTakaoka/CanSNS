@@ -188,6 +188,11 @@ final class CloudSync {
     private var fridgeDocs: [String: FridgeDoc] = [:]
     private var fridgeLabels: [String: CanLabelDoc] = [:]
     private var notificationDocs: [String: NotificationDoc] = [:]
+    /// 8日より前の自分の缶を開いたときに、あとから取りに行った開封・リアクション（canId → id → 記録）
+    private var extraActivities: [String: [String: ActivityDoc]] = [:]
+    private var loadedActivityCans: Set<String> = []
+    /// 受け取り中の缶の中身（同じ缶を2回ダウンロードしないように）
+    private var contentLoads: [String: Task<Void, Error>] = [:]
 
     // 書き込み中でまだサーバーから返ってきていないもの（画面から一瞬消えないように）
     private var pendingUsers: [String: UserProfile] = [:]
@@ -378,6 +383,29 @@ final class CloudSync {
     /// 缶の中身を受け取る（21:00前の友達の缶は、サーバーのルールで拒否される）
     func loadContent(canID: String, machineID: String) async throws {
         guard contentCache[canID] == nil else { return }
+        if let running = contentLoads[canID] {
+            return try await running.value
+        }
+        let task = Task { try await self.fetchContent(canID: canID, machineID: machineID) }
+        contentLoads[canID] = task
+        defer { contentLoads[canID] = nil }
+        try await task.value
+    }
+
+    /// 自分の缶の開封・リアクションを、その缶の分だけ取りに行く（監視しているのは最近8日分だけなので）
+    func loadActivities(canID: String, machineID: String) async {
+        guard !loadedActivityCans.contains(canID) else { return }
+        loadedActivityCans.insert(canID)
+        let query = machineRef(machineID).collection("activities").whereField("canId", isEqualTo: canID)
+        guard let snapshot = try? await query.getDocuments() else {
+            loadedActivityCans.remove(canID)
+            return
+        }
+        extraActivities[canID] = Self.decodeMap(snapshot, ActivityDoc.self) { $0.id }
+        rebuild()
+    }
+
+    private func fetchContent(canID: String, machineID: String) async throws {
         let ref = machineRef(machineID).collection("cans").document(canID).collection("private").document("content")
         let doc = try await ref.getDocument().data(as: CanContentDoc.self)
         var localName: String?
@@ -431,7 +459,14 @@ final class CloudSync {
         }
         db.cans = cans.values.sorted { $0.createdAt < $1.createdAt }
 
-        let activities = activityDocs.values.flatMap { $0.values }
+        var activityMap: [String: ActivityDoc] = [:]
+        for group in extraActivities.values {
+            activityMap.merge(group) { first, _ in first }
+        }
+        for group in activityDocs.values {
+            activityMap.merge(group) { _, latest in latest }
+        }
+        let activities = Array(activityMap.values)
         db.openings = activities.filter { $0.type == ActivityDoc.open }.map {
             Opening(id: $0.id, canID: $0.canId, userID: $0.userId, openedAt: $0.createdAt)
         }
@@ -561,8 +596,10 @@ final class CloudSync {
                                       actorId: notification.actorID, machineId: machineID, kind: notification.kind,
                                       canId: notification.canID, message: notification.message,
                                       createdAt: notification.createdAt, isRead: false)
+            // リアクションのお知らせは同じ ID で1回だけ。2回目は（上書き禁止のルールで）断られるが、それで正しい
+            let isOncePerReaction = notification.id.hasPrefix("reaction-")
             write(doc, to: userRef(notification.recipientID).collection("notifications").document(notification.id),
-                  label: "お知らせ")
+                  label: "お知らせ", reportErrors: !isOncePerReaction)
         }
 
         for notification in changes.readNotifications where notification.recipientID == uid {
@@ -585,8 +622,23 @@ final class CloudSync {
             return
         }
         batch.setData(["machineId": machine.id], forDocument: firestore.collection("inviteCodes").document(machine.inviteCode))
-        batch.setData(["machineIds": FieldValue.arrayUnion([machine.id])], forDocument: userRef(uid), merge: true)
-        batch.commit(completion: completion("自販機の作成"))
+        batch.commit { [weak self] error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let error {
+                    print("自販機の作成に失敗:", error.localizedDescription)
+                    // 画面に残った作りかけの自販機を消す
+                    self.pendingMachines[machine.id] = nil
+                    self.rebuild()
+                    self.onError?("自販機の作成に失敗しました。もう一度ためしてください")
+                    return
+                }
+                // メンバー登録がサーバーに届いてから、自分の「参加中の自販機」に加える。
+                // （先に加えると、メンバーになる前に監視が始まって権限エラーで止まってしまう）
+                self.userRef(uid).setData(["machineIds": FieldValue.arrayUnion([machine.id])], merge: true,
+                                          completion: self.completion("自販機の登録"))
+            }
+        }
     }
 
     /// 缶を納品する：写真などを Cloudinary に上げてから、ラベルと中身を Firestore に書く
@@ -626,8 +678,8 @@ final class CloudSync {
     /// 招待コードで自販機に参加する
     func join(inviteCode: String, userName: String) async throws -> String {
         guard let uid else { throw CloudError.notSignedIn }
-        let code = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !code.isEmpty else { throw CanSNSError.invalidInviteCode }
+        // 「/」などが入ると Firestore の文書の場所が壊れてアプリが落ちるので、先に形を確かめる
+        guard let code = InviteCode.normalize(inviteCode) else { throw CanSNSError.invalidInviteCode }
         let invite = try await firestore.collection("inviteCodes").document(code).getDocument()
         guard let machineID = invite.data()?["machineId"] as? String else { throw CanSNSError.invalidInviteCode }
         if userDocs[uid]?.machineIds?.contains(machineID) == true { throw CanSNSError.alreadyMember }
@@ -636,11 +688,17 @@ final class CloudSync {
         let now = Date()
         let member = try Firestore.Encoder().encode(MemberDoc(userId: uid, joinedAt: now, inviteCode: code))
         try await ref.collection("members").document(uid).setData(member)
+
+        // 満員（最大人数をこえた）なら、参加を取り消す
+        let members = try await ref.collection("members").getDocuments()
+        if members.documents.count > MachineRules.maxMembers {
+            try? await ref.collection("members").document(uid).delete()
+            throw CanSNSError.machineFull
+        }
         try await userRef(uid).setData(["machineIds": FieldValue.arrayUnion([machineID])], merge: true)
 
         // ほかのメンバーに「新しい仲間が来た」とお知らせ（新商品入荷）
         let machineName = (try? await ref.getDocument().data(as: MachineDoc.self))?.name ?? "自販機"
-        let members = try await ref.collection("members").getDocuments()
         for document in members.documents where document.documentID != uid {
             let doc = NotificationDoc(
                 id: UUID().uuidString, recipientId: document.documentID, actorId: uid, machineId: machineID,
@@ -687,9 +745,9 @@ final class CloudSync {
         }
     }
 
-    private func write<T: Encodable>(_ value: T, to ref: DocumentReference, label: String) {
+    private func write<T: Encodable>(_ value: T, to ref: DocumentReference, label: String, reportErrors: Bool = true) {
         do {
-            try ref.setData(from: value, completion: completion(label))
+            try ref.setData(from: value, completion: reportErrors ? completion(label) : nil)
         } catch {
             onError?("\(label)の保存に失敗しました")
         }
@@ -738,6 +796,7 @@ final class CloudSync {
     func start() {}
     func stop() {}
     func loadContent(canID: String, machineID: String) async throws {}
+    func loadActivities(canID: String, machineID: String) async {}
     func apply(_ changes: DatabaseChanges, db: AppDatabase, currentMachineID: String?) {}
     func join(inviteCode: String, userName: String) async throws -> String { throw CanSNSError.invalidInviteCode }
 }

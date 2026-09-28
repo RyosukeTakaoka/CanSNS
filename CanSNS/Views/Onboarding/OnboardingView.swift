@@ -5,12 +5,14 @@ struct OnboardingView: View {
     @Environment(AppStore.self) private var store
     @State private var name = ""
     @State private var emoji = "🙂"
+    /// 背景の時刻（文字を打つたびに背景を描き直さないように、画面を開いたときの時刻で固定する）
+    @State private var sceneDate = Date()
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
         ZStack {
-            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+            SkyBackgroundView(date: store.adjusted(sceneDate), calendar: store.clock.calendar)
                 .ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 22) {
@@ -26,11 +28,14 @@ struct OnboardingView: View {
                     VStack(spacing: 8) {
                         Text("CanSNS")
                             .font(.pixel(44))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
                         Text("友達の今日を、1本ずつ受け取る。")
                             .font(.pixel(16))
                     }
                     .foregroundStyle(.white)
-                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
+                    // 明るい空の上でも読めるように、上下左右をふち取る
+                    .pixelOutline(width: 2)
 
                     VStack(alignment: .leading, spacing: 14) {
                         PixelHeading(text: "なまえ")
@@ -62,10 +67,11 @@ struct MachineSetupView: View {
     @State private var inviteCode = ""
     @State private var errorMessage: String?
     @State private var isJoining = false
+    @State private var sceneDate = Date()
 
     var body: some View {
         ZStack {
-            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+            SkyBackgroundView(date: store.adjusted(sceneDate), calendar: store.clock.calendar)
                 .ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -73,10 +79,9 @@ struct MachineSetupView: View {
                         Text("自販機をえらぼう")
                             .font(.pixel(28))
                         Text("自販機 ＝ 友達グループです。少人数（\(MachineRules.minimumMembersToOpen)〜\(MachineRules.maxMembers)人）で使います。")
-                            .font(.pixel(13))
+                            .font(.pixel(14))
                     }
-                    .foregroundStyle(.white)
-                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
+                    .pixelWindow()
                     .padding(.top, isSheet ? 8 : 24)
 
                     // 新しく置く
@@ -100,12 +105,7 @@ struct MachineSetupView: View {
                         Button {
                             join()
                         } label: {
-                            if isJoining {
-                                ProgressView()
-                                    .tint(Pixel.ink)
-                            } else {
-                                Text("参加する")
-                            }
+                            Text(isJoining ? "参加しています…" : "参加する")
                         }
                         .buttonStyle(PixelButtonStyle(color: Pixel.yellow, textColor: Pixel.ink))
                         .disabled(inviteCode.trimmingCharacters(in: .whitespaces).count < 6 || isJoining)
@@ -127,7 +127,7 @@ struct MachineSetupView: View {
                                 store.startDemo()
                                 finish()
                             }
-                            .buttonStyle(PixelButtonStyle(color: Pixel.green))
+                            .buttonStyle(PixelButtonStyle(color: Pixel.green, textColor: Pixel.ink))
                         }
                         .pixelWindow()
                     }
@@ -139,9 +139,14 @@ struct MachineSetupView: View {
             if isSheet {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("とじる") { dismiss() }
+                        .tint(.white)
                 }
             }
         }
+        // シートのときは、上の帯を暗いウィンドウの色にして「とじる」を読みやすくする
+        .toolbarBackground(Pixel.windowFill, for: .navigationBar)
+        .toolbarBackground(isSheet ? .visible : .hidden, for: .navigationBar)
+        .toolbarColorScheme(isSheet ? .dark : nil, for: .navigationBar)
         .alert("参加できませんでした", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
