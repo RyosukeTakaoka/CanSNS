@@ -40,7 +40,9 @@ final class AppStore {
         }
     }
 
-    let clock = BusinessClock()
+    /// 開店（21:00）・廃棄（翌6:00）は日本時間で判定する。
+    /// サーバーのルールも日本時間の21:00で固定しているので、端末のタイムゾーンに左右されないようにする。
+    let clock = BusinessClock(timeZone: TimeZone(identifier: "Asia/Tokyo") ?? .current)
 
     @ObservationIgnored private let fileURL: URL
     @ObservationIgnored private let defaults = UserDefaults.standard
