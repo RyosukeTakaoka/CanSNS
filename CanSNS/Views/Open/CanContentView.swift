@@ -82,8 +82,8 @@ struct CanContentView: View {
     /// 中身をサーバーから受け取っているところ
     private var sealedView: some View {
         VStack(spacing: 12) {
-            if let loadError {
-                Label(loadError, systemImage: "exclamationmark.triangle")
+            if let errorMessage = loadError {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Button("もう一度") {
