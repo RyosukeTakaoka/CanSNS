@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// CanSNS の Cloud Storage セキュリティルール（写真・動画・音声）
+// 読めるのは Firestore の「缶の中身」と同じ人だけ（投稿者 / 開店時間のメンバー / 冷蔵庫に入れた人）
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /machines/{machineId}/cans/{canId}/{fileName} {
+
+      function isMember() {
+        return request.auth != null
+          && firestore.exists(/databases/(default)/documents/machines/$(machineId)/members/$(request.auth.uid));
+      }
+
+      function content() {
+        return firestore.get(/databases/(default)/documents/machines/$(machineId)/cans/$(canId)/private/content).data;
+      }
+
+      // アップロード：メンバーだけ・60MBまで
+      allow create: if isMember() && request.resource.size < 60 * 1024 * 1024;
+
+      allow read: if request.auth != null && (
+        content().authorId == request.auth.uid
+        || (isMember() && request.time >= content().openAt && request.time < content().disposeAt)
+        || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)/fridge/$(canId))
+      );
+    }
+  }
+}

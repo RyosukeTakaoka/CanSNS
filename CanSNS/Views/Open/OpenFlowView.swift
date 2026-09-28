@@ -213,6 +213,8 @@ struct OpenFlowView: View {
         SoundPlayer.shared.play(.beep)
         Haptics.impact(.light)
         Task { await spinRoulette() }
+        // 缶が落ちている間に、サーバーから中身を受け取っておく（Firebase モード）
+        Task { _ = await store.loadContentIfNeeded(can) }
 
         try? await Task.sleep(nanoseconds: 300_000_000)
         withAnimation(.easeIn(duration: 0.38)) {

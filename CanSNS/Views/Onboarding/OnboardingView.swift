@@ -69,6 +69,7 @@ struct MachineSetupView: View {
     @State private var machineName = ""
     @State private var inviteCode = ""
     @State private var errorMessage: String?
+    @State private var isJoining = false
 
     var body: some View {
         ScrollView {
@@ -100,35 +101,40 @@ struct MachineSetupView: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
-                    Button("参加する") {
-                        do {
-                            try store.joinMachine(inviteCode: inviteCode)
-                            finish()
-                        } catch {
-                            errorMessage = error.localizedDescription
+                    Button {
+                        join()
+                    } label: {
+                        if isJoining {
+                            ProgressView()
+                        } else {
+                            Text("参加する")
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(inviteCode.count < 6)
-                    Text("※ 今はデータが端末の中だけに保存されるため、同じ端末で作った自販機にだけ参加できます")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    .disabled(inviteCode.count < 6 || isJoining)
+                    if store.mode == .local {
+                        Text("※ オフラインモードでは、同じ端末で作った自販機にだけ参加できます")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .card()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("デモで試す", systemImage: "sparkles")
-                        .font(.headline)
-                    Text("友達ボット3人がいる自販機で、納品→開店→開封→冷蔵庫の流れを1人で体験できます。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Button("デモの自販機を置く") {
-                        store.startDemo()
-                        finish()
+                if store.mode == .local {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("デモで試す", systemImage: "sparkles")
+                            .font(.headline)
+                        Text("友達ボット3人がいる自販機で、納品→開店→開封→冷蔵庫の流れを1人で体験できます。")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button("デモの自販機を置く") {
+                            store.startDemo()
+                            finish()
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
+                    .card()
                 }
-                .card()
             }
             .padding()
         }
@@ -147,6 +153,19 @@ struct MachineSetupView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "")
+        }
+    }
+
+    private func join() {
+        isJoining = true
+        Task {
+            do {
+                try await store.joinMachine(inviteCode: inviteCode)
+                finish()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isJoining = false
         }
     }
 

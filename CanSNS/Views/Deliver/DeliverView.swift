@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// 今日の1本を納品する（＝投稿する）画面
+/// 缶を納品する（＝投稿する）画面。1日に何本でも納品できる
 struct DeliverView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss

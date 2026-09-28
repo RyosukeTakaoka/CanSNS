@@ -26,6 +26,8 @@ struct Machine: Codable, Identifiable, Hashable {
     var inviteCode: String
     var createdAt: Date
     var members: [Membership]
+    /// これまでに納品された缶の累計（自販機のレベルに使う）
+    var deliveredCount: Int?
 
     var memberIDs: [String] { members.map(\.userID) }
 
@@ -130,6 +132,11 @@ struct CanPost: Codable, Identifiable, Hashable {
     var pattern: LabelPattern
     /// 友達が自分の冷蔵庫に保存するのを許可するか
     var allowFridge: Bool
+    /// true のとき、中身（種類・本文・メディア）をまだサーバーから受け取っていない。
+    /// 開店前の友達の缶はこの状態（ラベルだけ見える）。
+    var isSealed: Bool?
+
+    var isContentHidden: Bool { isSealed == true }
 
     /// 中身の要約（開けたあとの「成分表示」で使う。開ける前には表示しない）
     /// 例: 「写真1枚」「動画8秒」「音声12秒」「ひとこと」

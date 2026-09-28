@@ -68,15 +68,15 @@ final class AppDatabaseTests: XCTestCase {
         return draft
     }
 
-    func testOneCanPerDay() throws {
-        try db.deliver(textDraft(), authorID: alice.id, machineID: machine.id, now: date(28, 9), clock: clock)
-        XCTAssertThrowsError(try db.deliver(textDraft(), authorID: alice.id, machineID: machine.id,
-                                            now: date(28, 22), clock: clock)) { error in
-            XCTAssertEqual(error as? CanSNSError, .alreadyDelivered)
+    func testUnlimitedDelivery() throws {
+        // 1日に何本でも納品できる
+        for hour in [9, 12, 22] {
+            try db.deliver(textDraft(), authorID: alice.id, machineID: machine.id, now: date(28, hour), clock: clock)
         }
-        // 翌朝6時を過ぎたらまた納品できる
-        XCTAssertNoThrow(try db.deliver(textDraft(), authorID: alice.id, machineID: machine.id,
-                                        now: date(29, 6, 1), clock: clock))
+        let today = clock.businessDay(for: date(28, 9))
+        XCTAssertEqual(db.cans(in: machine.id, by: alice.id, on: today).count, 3)
+        XCTAssertEqual(db.totalCans(in: machine.id), 3)
+        XCTAssertEqual(db.machine(machine.id)?.deliveredCount, 3)
     }
 
     func testDeliveryIsSilent() throws {
@@ -273,6 +273,67 @@ final class EffectsTests: XCTestCase {
         let effects = db.effects(machineID: machine.id, day: today, clock: clock)
         XCTAssertTrue(effects.contains(.fullStock))
         XCTAssertTrue(effects.contains(.limitedNeon))
+    }
+}
+
+final class DatabaseChangesTests: XCTestCase {
+    let clock = BusinessClock(timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+
+    func date(_ d: Int, _ h: Int) -> Date {
+        clock.calendar.date(from: DateComponents(year: 2026, month: 9, day: d, hour: h))!
+    }
+
+    func testChangesTrackEachOperation() throws {
+        var db = AppDatabase()
+        let a = db.createUser(name: "a", emoji: "🐱", now: date(1, 7))
+        let b = db.createUser(name: "b", emoji: "🐶", now: date(1, 7))
+        let machine = db.createMachine(name: "m", ownerID: a.id, now: date(1, 7))
+        try db.joinMachine(inviteCode: machine.inviteCode, userID: b.id, now: date(1, 8))
+
+        // 納品：缶が1本増えるだけ（通知なし）
+        var before = db
+        var draft = CanDraft()
+        draft.title = "今日"
+        draft.text = "ひとこと"
+        let can = try db.deliver(draft, authorID: a.id, machineID: machine.id, now: date(28, 9), clock: clock)
+        var changes = db.changes(from: before)
+        XCTAssertEqual(changes.addedCans.map(\.id), [can.id])
+        XCTAssertTrue(changes.addedNotifications.isEmpty)
+
+        // 開封：開封記録と、投稿者へのお知らせ
+        before = db
+        try db.open(canID: can.id, userID: b.id, now: date(28, 21), clock: clock)
+        changes = db.changes(from: before)
+        XCTAssertEqual(changes.addedOpenings.count, 1)
+        XCTAssertEqual(changes.addedNotifications.map(\.recipientID), [a.id])
+
+        // リアクションを付けて外す
+        before = db
+        db.toggleReaction(canID: can.id, userID: b.id, kind: .tansan, now: date(28, 21))
+        XCTAssertEqual(db.changes(from: before).addedReactions.count, 1)
+        before = db
+        db.toggleReaction(canID: can.id, userID: b.id, kind: .tansan, now: date(28, 21))
+        XCTAssertEqual(db.changes(from: before).removedReactions.count, 1)
+
+        // 既読にする
+        before = db
+        db.markAllRead(for: a.id)
+        changes = db.changes(from: before)
+        XCTAssertFalse(changes.readNotifications.isEmpty)
+        XCTAssertTrue(changes.addedNotifications.isEmpty)
+
+        // 何もしなければ空
+        XCTAssertTrue(db.changes(from: db).isEmpty)
+    }
+
+    func testSealedCan() {
+        var can = CanPost(id: "c", machineID: "m", authorID: "a",
+                          businessDay: BusinessDay(year: 2026, month: 9, day: 28), createdAt: Date(),
+                          title: "t", mood: .cold, kind: .text, text: nil, mediaFileName: nil,
+                          mediaDuration: nil, pattern: .plain, allowFridge: false)
+        XCTAssertFalse(can.isContentHidden)
+        can.isSealed = true
+        XCTAssertTrue(can.isContentHidden)
     }
 }
 

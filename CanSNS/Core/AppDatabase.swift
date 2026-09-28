@@ -8,7 +8,6 @@ enum CanSNSError: LocalizedError, Equatable {
     case machineFull
     case alreadyMember
     case notMember
-    case alreadyDelivered
     case notOpenYet
     case disposed
     case notEnoughMembers(needed: Int)
@@ -27,7 +26,6 @@ enum CanSNSError: LocalizedError, Equatable {
         case .machineFull: "この自販機は満員です（最大\(MachineRules.maxMembers)人）"
         case .alreadyMember: "すでにこの自販機のメンバーです"
         case .notMember: "この自販機のメンバーではありません"
-        case .alreadyDelivered: "今日はもう納品済みです。また明日の朝6時から納品できます"
         case .notOpenYet: "まだ開店前です。21:00になったら開けられます"
         case .disposed: "この缶はもう廃棄されました"
         case .notEnoughMembers(let needed): "あと\(needed)人集まると開店できます"
@@ -47,12 +45,13 @@ enum MachineRules {
     static let minimumMembersToOpen = 2
     /// 1台の自販機に入れる最大人数
     static let maxMembers = 8
-    /// 1人が1営業日に納品できる缶の数
-    static let cansPerDay = 1
+    // 1日に納品できる缶の数に上限はない
 }
 
-/// アプリのすべてのデータ。今は端末内にJSONで保存している。
-/// 将来サーバー（Firebase など）に移すときは、この中の操作をAPI呼び出しに置き換える。
+/// アプリのすべてのデータと、その操作（ルール）。
+/// - オフライン（デモ）モード: この構造体を丸ごと端末内に JSON で保存する
+/// - Firebase モード: サーバーから受け取ったデータでこの構造体を組み立て、
+///   操作した前後の差分（`changes(from:)`）をサーバーに書き込む
 struct AppDatabase: Codable {
     var users: [UserProfile] = []
     var machines: [Machine] = []
@@ -92,8 +91,9 @@ struct AppDatabase: Codable {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    func can(in machineID: String, by userID: String, on day: BusinessDay) -> CanPost? {
-        cans.first { $0.machineID == machineID && $0.authorID == userID && $0.businessDay == day }
+    /// その人がその日に納品した缶（何本でも納品できる）
+    func cans(in machineID: String, by userID: String, on day: BusinessDay) -> [CanPost] {
+        cans(in: machineID, on: day).filter { $0.authorID == userID }
     }
 
     func hasOpened(canID: String, userID: String) -> Bool {
@@ -186,10 +186,12 @@ struct AppDatabase: Codable {
 
     // MARK: - 書き込み
 
-    mutating func createUser(name: String, emoji: String, now: Date, isDemo: Bool = false) -> UserProfile {
+    /// - Parameter id: Firebase モードではログインしたユーザーのIDを使う（省略すると自動で作る）
+    mutating func createUser(id: String? = nil, name: String, emoji: String, now: Date,
+                             isDemo: Bool = false) -> UserProfile {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let user = UserProfile(
-            id: UUID().uuidString,
+            id: id ?? UUID().uuidString,
             name: trimmed.isEmpty ? "ななし" : String(trimmed.prefix(10)),
             emoji: emoji,
             createdAt: now,
@@ -241,10 +243,6 @@ struct AppDatabase: Codable {
         guard let machine = self.machine(machineID) else { throw CanSNSError.machineNotFound }
         guard machine.isMember(authorID) else { throw CanSNSError.notMember }
         let today = clock.businessDay(for: now)
-        let deliveredToday = cans.filter {
-            $0.machineID == machineID && $0.authorID == authorID && $0.businessDay == today
-        }.count
-        guard deliveredToday < MachineRules.cansPerDay else { throw CanSNSError.alreadyDelivered }
 
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CanSNSError.emptyTitle }
@@ -274,6 +272,9 @@ struct AppDatabase: Codable {
         )
         // 納品は通知しない。自販機に缶が1本増えて「NEW」が付くだけ。
         cans.append(can)
+        if let index = machines.firstIndex(where: { $0.id == machineID }) {
+            machines[index].deliveredCount = (machines[index].deliveredCount ?? 0) + 1
+        }
         return can
     }
 

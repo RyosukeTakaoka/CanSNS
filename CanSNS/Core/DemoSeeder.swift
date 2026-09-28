@@ -46,7 +46,7 @@ enum DemoSeeder {
             let friendCan = try? db.deliver(draft(index: offset), authorID: bot.id, machineID: machine.id,
                                             now: deliveredAt, clock: clock)
             if offset <= 2 {
-                try? db.deliver(draft(index: offset + 5), authorID: me, machineID: machine.id,
+                _ = try? db.deliver(draft(index: offset + 5), authorID: me, machineID: machine.id,
                                 now: deliveredAt.addingTimeInterval(600), clock: clock)
             }
             // 昨日の友達の缶を1本、冷蔵庫に入れておく
@@ -71,11 +71,11 @@ enum DemoSeeder {
         guard let machine = db.machine(machineID) else { return }
         let today = clock.businessDay(for: now)
         let bots = machine.memberIDs.compactMap { db.user($0) }.filter(\.isDemo)
-        for (index, bot) in bots.enumerated() where db.can(in: machineID, by: bot.id, on: today) == nil {
+        for (index, bot) in bots.enumerated() where db.cans(in: machineID, by: bot.id, on: today).isEmpty {
             let seedIndex = today.day + index * 3
             // 少しずつ時間をずらして納品したことにする（未来の時刻にはしない）
             let deliveredAt = max(clock.deliveryStart(of: today), now.addingTimeInterval(Double(-600 * (index + 1))))
-            try? db.deliver(draft(index: seedIndex), authorID: bot.id, machineID: machineID,
+            _ = try? db.deliver(draft(index: seedIndex), authorID: bot.id, machineID: machineID,
                             now: deliveredAt, clock: clock)
         }
     }

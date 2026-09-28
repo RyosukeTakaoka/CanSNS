@@ -118,48 +118,63 @@ struct SettingsView: View {
 
     private var developerSection: some View {
         Section {
-            LabeledContent("アプリ内の時刻", value: DateText.monthDayTime(store.now))
-            HStack {
-                timeButton("朝 8:00", hour: 8)
-                timeButton("夜 21:30", hour: 21, minute: 30)
-                timeButton("深夜 2:00", hour: 2)
-            }
-            .buttonStyle(.bordered)
-            Button("翌朝 6:05 に進める（廃棄を確認）") {
-                store.skipToNextMorning()
-                message = "翌朝になりました。昨日の缶は冷蔵庫へ"
-            }
-            if store.isTimeShifted {
-                Button("本当の時刻に戻す") { store.resetTime() }
-            }
-
-            if let machine = store.currentMachine {
-                Picker("なりきるユーザー", selection: Binding(
-                    get: { store.currentUserID ?? "" },
-                    set: { store.switchUser(to: $0) }
-                )) {
-                    ForEach(machine.memberIDs, id: \.self) { userID in
-                        if let user = store.user(userID) {
-                            Text("\(user.emoji) \(user.name)").tag(userID)
-                        }
-                    }
+            LabeledContent("モード", value: store.mode == .cloud ? "Firebase（友達と共有）" : "オフライン（この端末だけ）")
+            if store.mode == .cloud {
+                Button("オフライン（デモ）モードに切り替える") { store.setLocalMode(true) }
+            } else {
+                if store.isCloudAvailable {
+                    Button("Firebase モードに戻す") { store.setLocalMode(false) }
                 }
+                offlineTools
             }
-            Button("デモの友達に納品してもらう") {
-                store.letFriendsDeliver()
-                message = "友達の缶が入荷しました"
-            }
-            Button("デモの友達に自分の缶を開けてもらう") {
-                message = store.letFriendsReactToMyCan()
-                    ? "友達が開けてくれました。お知らせを見てみよう"
-                    : "先に今日の缶を納品してください"
-            }
-            Button("すべてのデータを消す", role: .destructive) { confirmReset = true }
         } header: {
             Text("開発者メニュー（テスト用）")
         } footer: {
-            Text("時刻を動かすと、納品中→開店→廃棄の流れを1人で試せます。「なりきる」で友達側の操作も確認できます。")
+            Text(store.mode == .cloud
+                 ? "Firebase モードでは、開店・廃棄の時刻はサーバーの時計で判定されます。1人で流れを試したいときはオフラインモードへ。"
+                 : "時刻を動かすと、納品中→開店→廃棄の流れを1人で試せます。「なりきる」で友達側の操作も確認できます。")
         }
+    }
+
+    @ViewBuilder
+    private var offlineTools: some View {
+        LabeledContent("アプリ内の時刻", value: DateText.monthDayTime(store.now))
+        HStack {
+            timeButton("朝 8:00", hour: 8)
+            timeButton("夜 21:30", hour: 21, minute: 30)
+            timeButton("深夜 2:00", hour: 2)
+        }
+        .buttonStyle(.bordered)
+        Button("翌朝 6:05 に進める（廃棄を確認）") {
+            store.skipToNextMorning()
+            message = "翌朝になりました。昨日の缶は冷蔵庫へ"
+        }
+        if store.isTimeShifted {
+            Button("本当の時刻に戻す") { store.resetTime() }
+        }
+
+        if let machine = store.currentMachine {
+            Picker("なりきるユーザー", selection: Binding(
+                get: { store.currentUserID ?? "" },
+                set: { store.switchUser(to: $0) }
+            )) {
+                ForEach(machine.memberIDs, id: \.self) { userID in
+                    if let user = store.user(userID) {
+                        Text("\(user.emoji) \(user.name)").tag(userID)
+                    }
+                }
+            }
+        }
+        Button("デモの友達に納品してもらう") {
+            store.letFriendsDeliver()
+            message = "友達の缶が入荷しました"
+        }
+        Button("デモの友達に自分の缶を開けてもらう") {
+            message = store.letFriendsReactToMyCan()
+                ? "友達が開けてくれました。お知らせを見てみよう"
+                : "先に今日の缶を納品してください"
+        }
+        Button("すべてのデータを消す", role: .destructive) { confirmReset = true }
     }
 
     private func timeButton(_ title: String, hour: Int, minute: Int = 0) -> some View {
@@ -177,7 +192,7 @@ struct SettingsView: View {
             ruleRow("6:00〜20:59", "納品の時間。友達の缶のラベルは見えるけど、まだ開けられない")
             ruleRow("21:00", "開店！缶を開けて、友達の今日を受け取ろう（開店中も納品OK）")
             ruleRow("翌6:00", "廃棄。自分の缶は自分の冷蔵庫へ")
-            ruleRow("1日1本", "1人が納品できるのは1日1本まで")
+            ruleRow("何本でも", "1日に何本でも納品できる（動画・音声は15秒まで）")
             ruleRow("\(MachineRules.minimumMembersToOpen)人から", "自販機は\(MachineRules.minimumMembersToOpen)人以上集まると開店できる")
         }
     }

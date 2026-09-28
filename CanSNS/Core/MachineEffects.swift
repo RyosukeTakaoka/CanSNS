@@ -78,7 +78,9 @@ enum MachineGrowth {
 
 extension AppDatabase {
     func totalCans(in machineID: String) -> Int {
-        cans.filter { $0.machineID == machineID }.count
+        // サーバーから最近の缶だけ受け取っている場合もあるので、記録された累計と比べて大きいほう
+        let counted = cans.filter { $0.machineID == machineID }.count
+        return max(counted, machine(machineID)?.deliveredCount ?? 0)
     }
 
     /// `day` を含めて、さかのぼって何日連続で納品があったか

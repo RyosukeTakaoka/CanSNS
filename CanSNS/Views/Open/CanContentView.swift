@@ -4,14 +4,24 @@ import UIKit
 
 /// 缶の中身の画面（開けたあと・自分の缶・冷蔵庫から見るときに使う）
 struct CanContentView: View {
-    let can: CanPost
-    var justOpened: Bool = false
-    var isWin: Bool = false
+    private let initialCan: CanPost
+    private let justOpened: Bool
+    private let isWin: Bool
 
     @Environment(AppStore.self) private var store
     @State private var showStraw = false
     @State private var showLetter = false
     @State private var toast: String?
+    @State private var loadError: String?
+
+    init(can: CanPost, justOpened: Bool = false, isWin: Bool = false) {
+        initialCan = can
+        self.justOpened = justOpened
+        self.isWin = isWin
+    }
+
+    /// 最新の缶（Firebase から中身が届くと、ここが新しくなる）
+    private var can: CanPost { store.db.can(initialCan.id) ?? initialCan }
 
     private var me: String { store.currentUserID ?? "" }
     private var isAuthor: Bool { can.authorID == me }
@@ -27,7 +37,11 @@ struct CanContentView: View {
                         .font(.subheadline.bold())
                         .foregroundStyle(.orange)
                 }
-                CanBodyView(can: can)
+                if can.isContentHidden {
+                    sealedView
+                } else {
+                    CanBodyView(can: can)
+                }
                 if !isAuthor {
                     if isDisposed {
                         Label("この缶は廃棄済みです（冷蔵庫で保存中）", systemImage: "refrigerator")
@@ -40,9 +54,14 @@ struct CanContentView: View {
                 } else {
                     AuthorSummaryView(can: can)
                 }
-                IngredientsLabel(can: can, authorName: author?.name ?? "だれか", clock: store.clock)
+                if !can.isContentHidden {
+                    IngredientsLabel(can: can, authorName: author?.name ?? "だれか", clock: store.clock)
+                }
             }
             .padding()
+        }
+        .task(id: initialCan.id) {
+            loadError = await store.loadContentIfNeeded(can)
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(can.title)
@@ -60,11 +79,34 @@ struct CanContentView: View {
         }
     }
 
+    /// 中身をサーバーから受け取っているところ
+    private var sealedView: some View {
+        VStack(spacing: 12) {
+            if let loadError {
+                Label(loadError, systemImage: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("もう一度") {
+                    Task { loadError = await store.loadContentIfNeeded(can) }
+                }
+                .buttonStyle(.bordered)
+            } else {
+                ProgressView()
+                Text("缶の中身を取り出しています…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 160)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
     // MARK: - 見出し
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            CanView(can: can, emoji: author?.emoji ?? "🙂", width: 58, tabOpen: true, showsKind: true)
+            CanView(can: can, emoji: author?.emoji ?? "🙂", width: 58, tabOpen: true,
+                    showsKind: !can.isContentHidden)
             VStack(alignment: .leading, spacing: 6) {
                 Text(can.title)
                     .font(.title2.bold())

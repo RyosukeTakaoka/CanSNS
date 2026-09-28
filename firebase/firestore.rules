@@ -1,0 +1,144 @@
+rules_version = '2';
+
+// CanSNS の Firestore セキュリティルール
+// ・自販機のデータは、その自販機のメンバーだけが読める
+// ・缶の「中身」は、投稿者本人か、開店時間（21:00〜翌6:00）のメンバーか、冷蔵庫に入れた人だけが読める
+// ・時刻の判定はサーバーの時計（request.time）で行うので、端末の時計をずらしてもズルできない
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return request.auth.uid;
+    }
+
+    function memberPath(machineId, uid) {
+      return /databases/$(database)/documents/machines/$(machineId)/members/$(uid);
+    }
+
+    function isMember(machineId) {
+      return signedIn() && exists(memberPath(machineId, me()));
+    }
+
+    function canPath(machineId, canId) {
+      return /databases/$(database)/documents/machines/$(machineId)/cans/$(canId);
+    }
+
+    // ---------- ユーザー ----------
+    match /users/{uid} {
+      // 名前とアイコンはログインしている人なら読める（メンバー表示に使う）
+      allow read: if signedIn();
+      allow create, update: if signedIn() && me() == uid;
+
+      // 冷蔵庫（本人だけ）。投稿者が「冷蔵庫OK」にした缶だけ入れられる
+      match /fridge/{canId} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create: if signedIn() && me() == uid
+          && isMember(request.resource.data.machineId)
+          && get(/databases/$(database)/documents/machines/$(request.resource.data.machineId)/cans/$(canId)/private/content).data.allowFridge == true;
+      }
+
+      // お知らせ（読むのは本人だけ。書けるのは同じ自販機のメンバーだけ）
+      match /notifications/{notificationId} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow update: if signedIn() && me() == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+        allow create: if signedIn()
+          && request.resource.data.actorId == me()
+          && request.resource.data.recipientId == uid
+          && isMember(request.resource.data.machineId)
+          && exists(memberPath(request.resource.data.machineId, uid));
+      }
+    }
+
+    // ---------- 招待コード ----------
+    match /inviteCodes/{code} {
+      // コードを知っている人だけが1件ずつ調べられる（一覧は取れない）
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && getAfter(/databases/$(database)/documents/machines/$(request.resource.data.machineId)).data.ownerId == me();
+    }
+
+    // ---------- 自販機 ----------
+    match /machines/{machineId} {
+      allow read: if isMember(machineId);
+      allow create: if signedIn()
+        && request.resource.data.ownerId == me()
+        && request.resource.data.deliveredCount == 0;
+      // 納品数を1ずつ増やすことだけ許可
+      allow update: if isMember(machineId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredCount'])
+        && request.resource.data.deliveredCount == resource.data.deliveredCount + 1;
+
+      // メンバー：作った本人か、正しい招待コードを持っている人だけが自分を追加できる
+      match /members/{uid} {
+        allow read: if isMember(machineId);
+        allow create: if signedIn() && me() == uid
+          && request.resource.data.userId == uid
+          && (
+            getAfter(/databases/$(database)/documents/machines/$(machineId)).data.ownerId == me()
+            || request.resource.data.inviteCode == get(/databases/$(database)/documents/machines/$(machineId)).data.inviteCode
+          );
+      }
+
+      // 缶のラベル（商品名・気分・柄）：メンバーならいつでも見られる
+      match /cans/{canId} {
+        allow read: if isMember(machineId);
+        allow create: if isMember(machineId)
+          && request.resource.data.id == canId
+          && request.resource.data.authorId == me()
+          && request.resource.data.disposeAt == request.resource.data.openAt + duration.value(9, 'h')
+          && request.resource.data.disposeAt > request.time
+          && request.resource.data.openAt < request.time + duration.value(16, 'h');
+
+        // 缶の中身：開店時間のあいだだけ友達が読める
+        match /private/{docId} {
+          allow create: if isMember(machineId)
+            && request.resource.data.authorId == me()
+            && getAfter(canPath(machineId, canId)).data.authorId == me()
+            && request.resource.data.openAt == getAfter(canPath(machineId, canId)).data.openAt
+            && request.resource.data.disposeAt == getAfter(canPath(machineId, canId)).data.disposeAt;
+          allow read: if signedIn() && (
+            resource.data.authorId == me()
+            || (isMember(machineId) && request.time >= resource.data.openAt && request.time < resource.data.disposeAt)
+            || exists(/databases/$(database)/documents/users/$(me())/fridge/$(canId))
+          );
+        }
+      }
+
+      // 開封・リアクション：開店後にだけ記録できる
+      match /activities/{activityId} {
+        allow read: if isMember(machineId);
+        allow create: if isMember(machineId)
+          && request.resource.data.userId == me()
+          && request.time >= get(canPath(machineId, request.resource.data.canId)).data.openAt;
+        allow delete: if isMember(machineId)
+          && resource.data.userId == me()
+          && resource.data.type == 'reaction';
+      }
+
+      // 返却口の手紙：送った人と投稿者だけが読める
+      match /letters/{letterId} {
+        allow read: if signedIn() && (resource.data.fromId == me() || resource.data.toId == me());
+        allow create: if isMember(machineId)
+          && request.resource.data.fromId == me()
+          && request.resource.data.toId == get(canPath(machineId, request.resource.data.canId)).data.authorId;
+      }
+
+      // ストロー（1対1の返信）：その2人だけが読める
+      match /straws/{strawId} {
+        allow read: if signedIn() && me() in resource.data.participants;
+        allow create: if isMember(machineId)
+          && request.resource.data.senderId == me()
+          && request.resource.data.participants.size() == 2
+          && me() in request.resource.data.participants
+          && request.resource.data.authorId == get(canPath(machineId, request.resource.data.canId)).data.authorId
+          && request.resource.data.authorId in request.resource.data.participants
+          && request.resource.data.threadUserId in request.resource.data.participants;
+      }
+    }
+  }
+}

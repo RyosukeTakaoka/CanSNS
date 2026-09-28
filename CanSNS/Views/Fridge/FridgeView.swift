@@ -93,7 +93,7 @@ struct FridgeView: View {
                     } label: {
                         VStack(spacing: 4) {
                             CanView(can: can, emoji: store.user(can.authorID)?.emoji ?? "🙂", width: 52,
-                                    showsKind: true)
+                                    showsKind: !can.isContentHidden)
                             Text(store.user(can.authorID)?.name ?? "")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)

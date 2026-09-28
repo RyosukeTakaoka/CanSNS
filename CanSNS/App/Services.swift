@@ -131,7 +131,7 @@ enum NotificationScheduler {
     /// 毎日くり返すローカル通知を登録する（同じIDなので何度呼んでも上書きされるだけ）
     static func schedule() {
         let items: [(id: String, hour: Int, minute: Int, title: String, body: String)] = [
-            ("reminder-deliver", 19, 30, "納品はおすみですか？", "21:00に自販機が開店します。今日の1本を納品しよう🥫"),
+            ("reminder-deliver", 19, 30, "納品はおすみですか？", "21:00に自販機が開店します。今日の缶を納品しよう🥫"),
             ("reminder-open", 21, 0, "🌙 自販機が開店しました", "友達の今日を受け取りにいこう。ガコン！"),
             ("reminder-dispose", 5, 30, "まもなく廃棄", "6:00に缶が廃棄されます。残したい缶は冷蔵庫へ🧊"),
         ]

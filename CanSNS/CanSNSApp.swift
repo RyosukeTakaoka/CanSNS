@@ -18,7 +18,11 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if store.currentUser == nil {
+            if case .failed(let message) = store.cloudStatus {
+                ConnectionErrorView(message: message)
+            } else if store.isLoading {
+                LaunchView()
+            } else if store.currentUser == nil {
                 OnboardingView()
             } else if store.currentMachine == nil {
                 NavigationStack {
@@ -48,5 +52,49 @@ struct MainTabView: View {
                 .tabItem { Label("設定", systemImage: "gearshape.fill") }
         }
         .tint(Theme.machineBody)
+        .toast(Binding(get: { store.syncMessage }, set: { store.syncMessage = $0 }))
+    }
+}
+
+/// Firebase に接続しているあいだの画面
+struct LaunchView: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        ZStack {
+            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+                .ignoresSafeArea()
+            VStack(spacing: 16) {
+                CanView(title: "CanSNS", mood: .cold, kind: .text, pattern: .stripe, emoji: "🥫", width: 70)
+                ProgressView("自販機に電気を入れています…")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+}
+
+/// Firebase に接続できなかったときの画面
+struct ConnectionErrorView: View {
+    @Environment(AppStore.self) private var store
+    var message: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("サーバーにつながりませんでした")
+                .font(.headline)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("もう一度つなぐ") { store.retryConnection() }
+                .buttonStyle(.borderedProminent)
+            Button("オフライン（デモ）モードで使う") { store.setLocalMode(true) }
+                .font(.footnote)
+        }
+        .padding(32)
     }
 }

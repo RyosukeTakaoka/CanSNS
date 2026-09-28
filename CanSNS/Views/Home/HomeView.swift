@@ -43,7 +43,8 @@ struct HomeView: View {
             let today = clock.businessDay(for: now)
             let phase = clock.phase(at: now)
             let effects = store.db.effects(machineID: machine.id, day: today, clock: clock)
-            let myCan = store.db.can(in: machine.id, by: me.id, on: today)
+            let todaysCans = store.db.cans(in: machine.id, on: today)
+            let myCans = todaysCans.filter { $0.authorID == me.id }
 
             ZStack {
                 SkyBackgroundView(date: now, calendar: clock.calendar)
@@ -60,15 +61,15 @@ struct HomeView: View {
                         }
                         VendingMachineView(
                             machineName: machine.name,
-                            slots: slots(for: machine, today: today),
-                            lamps: lamps(for: machine, today: today, phase: phase, me: me.id),
+                            slots: slots(for: machine, cans: todaysCans),
+                            lamps: lamps(for: machine, cans: todaysCans, phase: phase, me: me.id),
                             isOpenPhase: phase == .open,
                             level: MachineGrowth.level(totalCans: store.db.totalCans(in: machine.id)),
                             effects: effects,
                             digits: digits(for: today),
                             onTap: { slot in handleTap(slot, me: me.id) }
                         )
-                        deliverSection(myCan: myCan, me: me)
+                        deliverSection(myCans: myCans, me: me)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -130,44 +131,14 @@ struct HomeView: View {
 
     // MARK: - 納品ボタン
 
-    @ViewBuilder
-    private func deliverSection(myCan: CanPost?, me: UserProfile) -> some View {
-        if let myCan {
-            Button {
-                viewingCan = myCan
-            } label: {
-                HStack(spacing: 12) {
-                    CanView(can: myCan, emoji: me.emoji, width: 34)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("今日は納品済み")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("「\(myCan.title)」")
-                            .font(.headline)
-                        Group {
-                            if store.clock.phase(at: store.now) == .delivery {
-                                Text("21:00の開店を待っています")
-                            } else {
-                                Text("開けた人 \(store.db.openings(of: myCan.id).count)人")
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.secondary)
-                }
-                .padding(14)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        } else {
+    /// 納品ボタン（何本でも納品できる）と、今日自分が納品した缶
+    private func deliverSection(myCans: [CanPost], me: UserProfile) -> some View {
+        VStack(spacing: 10) {
             Button {
                 SoundPlayer.shared.play(.beep)
                 showDeliver = true
             } label: {
-                Label("今日の1本を納品する", systemImage: "shippingbox.fill")
+                Label(myCans.isEmpty ? "今日の缶を納品する" : "もう1本納品する", systemImage: "shippingbox.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -176,44 +147,80 @@ struct HomeView: View {
                     .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
             }
             .buttonStyle(.plain)
+
+            if !myCans.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("今日納品した缶 \(myCans.count)本")
+                            .font(.subheadline.bold())
+                        Spacer()
+                        Text(store.clock.phase(at: store.now) == .delivery ? "21:00の開店を待っています" : "営業中")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(Array(myCans.reversed())) { can in
+                                Button {
+                                    viewingCan = can
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        CanView(can: can, emoji: me.emoji, width: 40)
+                                        Text("開けた人 \(store.db.openings(of: can.id).count)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding(14)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
         }
     }
 
     // MARK: - 自販機の中身を組み立てる
 
-    private func slots(for machine: Machine, today: BusinessDay) -> [MachineSlot] {
-        var result: [MachineSlot] = machine.memberIDs.compactMap { userID in
-            guard let user = store.user(userID) else { return nil }
-            if let can = store.db.can(in: machine.id, by: userID, on: today) {
-                return MachineSlot(id: userID, content: .stocked(can, user), isNew: store.isNew(can))
-            }
-            return MachineSlot(id: userID, content: .soldOut(user))
+    /// 今日の缶をすべて並べ、まだ1本も納品していないメンバーは「売切」、残りは「募集中」の空き枠
+    private func slots(for machine: Machine, cans: [CanPost]) -> [MachineSlot] {
+        var result: [MachineSlot] = cans.compactMap { can in
+            guard let author = store.user(can.authorID) else { return nil }
+            return MachineSlot(id: can.id, content: .stocked(can, author), isNew: store.isNew(can))
         }
-        // 4の倍数になるまで「募集中」の空き枠で埋める
+        let authors = Set(cans.map(\.authorID))
+        for userID in machine.memberIDs where !authors.contains(userID) {
+            if let user = store.user(userID) {
+                result.append(MachineSlot(id: userID, content: .soldOut(user)))
+            }
+        }
+        // 4の倍数になるまで空き枠で埋める
         var index = 0
-        while result.count < 4 || (!result.count.isMultiple(of: 4) && result.count < MachineRules.maxMembers) {
+        while result.count < 4 || !result.count.isMultiple(of: 4) {
             result.append(MachineSlot(id: "empty-\(index)", content: .recruiting))
             index += 1
         }
         return result
     }
 
-    private func lamps(for machine: Machine, today: BusinessDay, phase: BusinessPhase,
+    private func lamps(for machine: Machine, cans: [CanPost], phase: BusinessPhase,
                        me: String) -> [String: SlotLamp] {
         var result: [String: SlotLamp] = [:]
         let canOpen = phase == .open && machine.members.count >= MachineRules.minimumMembersToOpen
-        for userID in machine.memberIDs {
-            guard let can = store.db.can(in: machine.id, by: userID, on: today) else {
-                result[userID] = .soldOut
-                continue
-            }
-            if userID == me {
-                result[userID] = .mine
+        for can in cans {
+            if can.authorID == me {
+                result[can.id] = .mine
             } else if store.db.hasOpened(canID: can.id, userID: me) {
-                result[userID] = .purchased
+                result[can.id] = .purchased
             } else {
-                result[userID] = canOpen ? .selling : .preparing
+                result[can.id] = canOpen ? .selling : .preparing
             }
+        }
+        for userID in machine.memberIDs where result[userID] == nil {
+            result[userID] = .soldOut
         }
         return result
     }

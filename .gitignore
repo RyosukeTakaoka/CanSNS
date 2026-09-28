@@ -11,3 +11,6 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
+
+# Firebase の設定ファイル（各自が Firebase コンソールからダウンロードして置く）
+GoogleService-Info.plist
