@@ -85,6 +85,9 @@ final class AppStore {
     /// Firebase に接続中で、まだ画面を出せない
     var isLoading: Bool { mode == .cloud && cloudStatus == .connecting }
 
+    /// 写真・動画・音声の缶を送れるか（Firebase モードでは Cloudinary の設定が必要）
+    var canSendMedia: Bool { mode == .local || CloudinaryUploader.isConfigured }
+
     /// オフライン（デモ）モードと Firebase モードを切り替える
     func setLocalMode(_ useLocal: Bool) {
         defaults.set(useLocal, forKey: Keys.forceLocal)
@@ -239,6 +242,9 @@ final class AppStore {
     func deliver(_ draft: CanDraft) throws -> CanPost {
         guard let userID = currentUserID else { throw CanSNSError.userNotFound }
         guard let machine = currentMachine else { throw CanSNSError.machineNotFound }
+        if draft.kind != .text && !canSendMedia {
+            throw CloudinaryError.notConfigured
+        }
         return try perform {
             try $0.deliver(draft, authorID: userID, machineID: machine.id, now: now, clock: clock)
         }

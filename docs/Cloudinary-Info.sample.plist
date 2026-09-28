@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLOUD_NAME</key>
+	<string>YOUR_CLOUD_NAME</string>
+	<key>UPLOAD_PRESET</key>
+	<string>YOUR_UPLOAD_PRESET</string>
+</dict>
+</plist>

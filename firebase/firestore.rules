@@ -2,7 +2,8 @@ rules_version = '2';
 
 // CanSNS の Firestore セキュリティルール
 // ・自販機のデータは、その自販機のメンバーだけが読める
-// ・缶の「中身」は、投稿者本人か、開店時間（21:00〜翌6:00）のメンバーか、冷蔵庫に入れた人だけが読める
+// ・缶の「中身」（本文と、Cloudinary に置いた写真などの URL）は、
+//   投稿者本人か、開店時間（21:00〜翌6:00）のメンバーか、冷蔵庫に入れた人だけが読める
 // ・時刻の判定はサーバーの時計（request.time）で行うので、端末の時計をずらしてもズルできない
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -96,8 +97,11 @@ service cloud.firestore {
 
         // 缶の中身：開店時間のあいだだけ友達が読める
         match /private/{docId} {
+          // 写真などの URL は Cloudinary のものだけ受け付ける
           allow create: if isMember(machineId)
             && request.resource.data.authorId == me()
+            && (!('mediaURL' in request.resource.data)
+                || request.resource.data.mediaURL.matches('https://res[.]cloudinary[.]com/.*'))
             && getAfter(canPath(machineId, canId)).data.authorId == me()
             && request.resource.data.openAt == getAfter(canPath(machineId, canId)).data.openAt
             && request.resource.data.disposeAt == getAfter(canPath(machineId, canId)).data.disposeAt;

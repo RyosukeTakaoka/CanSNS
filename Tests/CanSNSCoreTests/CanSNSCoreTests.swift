@@ -369,3 +369,51 @@ final class SoundAndSkyTests: XCTestCase {
         XCTAssertGreaterThan(noon.r + noon.g + noon.b, night.r + night.g + night.b)
     }
 }
+
+final class CloudinaryTests: XCTestCase {
+    func testConfigParsing() {
+        XCTAssertNil(CloudinaryConfig(dictionary: [:]))
+        XCTAssertNil(CloudinaryConfig(dictionary: ["CLOUD_NAME": "YOUR_CLOUD_NAME", "UPLOAD_PRESET": "YOUR_UPLOAD_PRESET"]))
+        XCTAssertNil(CloudinaryConfig(dictionary: ["CLOUD_NAME": "demo", "UPLOAD_PRESET": "  "]))
+        let config = CloudinaryConfig(dictionary: ["CLOUD_NAME": " demo ", "UPLOAD_PRESET": "cansns_unsigned"])
+        XCTAssertEqual(config?.cloudName, "demo")
+        XCTAssertEqual(config?.uploadURL(for: .photo).absoluteString, "https://api.cloudinary.com/v1_1/demo/image/upload")
+        // 動画と音声は video としてアップロードする
+        XCTAssertEqual(config?.uploadURL(for: .video).absoluteString, "https://api.cloudinary.com/v1_1/demo/video/upload")
+        XCTAssertEqual(config?.uploadURL(for: .voice).absoluteString, "https://api.cloudinary.com/v1_1/demo/video/upload")
+    }
+
+    func testMultipartBody() {
+        var form = MultipartFormData(boundary: "XYZ")
+        form.addField(name: "upload_preset", value: "p")
+        form.addFile(name: "file", fileName: "a.jpg", mimeType: "image/jpeg", data: Data("IMG".utf8))
+        let body = String(decoding: form.finalized(), as: UTF8.self)
+        XCTAssertEqual(form.contentType, "multipart/form-data; boundary=XYZ")
+        XCTAssertEqual(body, """
+        --XYZ\r
+        Content-Disposition: form-data; name="upload_preset"\r
+        \r
+        p\r
+        --XYZ\r
+        Content-Disposition: form-data; name="file"; filename="a.jpg"\r
+        Content-Type: image/jpeg\r
+        \r
+        IMG\r
+        --XYZ--\r
+
+        """)
+        XCTAssertEqual(MultipartFormData.mimeType(forExtension: "M4A"), "audio/mp4")
+        XCTAssertEqual(MultipartFormData.mimeType(forExtension: "mov"), "video/quicktime")
+    }
+
+    func testResponseParsing() throws {
+        let ok = Data(#"{"public_id":"abc","secure_url":"https://res.cloudinary.com/demo/image/upload/v1/abc.jpg"}"#.utf8)
+        XCTAssertEqual(try CloudinaryUploadResponse.secureURL(from: ok, statusCode: 200),
+                       "https://res.cloudinary.com/demo/image/upload/v1/abc.jpg")
+        let failure = Data(#"{"error":{"message":"Upload preset not found"}}"#.utf8)
+        XCTAssertThrowsError(try CloudinaryUploadResponse.secureURL(from: failure, statusCode: 400)) { error in
+            XCTAssertEqual(error as? CloudinaryError, .uploadFailed("Upload preset not found"))
+        }
+        XCTAssertThrowsError(try CloudinaryUploadResponse.secureURL(from: Data(), statusCode: 500))
+    }
+}

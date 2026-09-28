@@ -2,11 +2,11 @@ import Foundation
 
 // Firebase のライブラリが読み込めるときだけ、本物の同期処理を使う。
 // （読み込めないときは下の「#else」側の空の実装になり、オフラインモードだけで動く）
-#if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(FirebaseFirestore) && canImport(FirebaseStorage)
+// 写真・動画・音声のファイルは Firebase ではなく Cloudinary に置く（CloudinaryUploader）。
+#if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(FirebaseFirestore)
 import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
-import FirebaseStorage
 
 enum CloudSupport {
     /// Firebase コンソールからダウンロードした GoogleService-Info.plist がアプリに入っているか
@@ -34,6 +34,7 @@ enum CloudSupport {
 // machines/{machineId}/activities/{id}          開封・リアクション
 // machines/{machineId}/letters/{id}             返却口の手紙（送った人と投稿者だけ読める）
 // machines/{machineId}/straws/{id}              ストロー（2人だけ読める）
+// （写真・動画・音声は Cloudinary に置き、その URL を「缶の中身」の mediaURL に入れる）
 
 private struct UserDoc: Codable {
     var id: String
@@ -78,7 +79,8 @@ private struct CanContentDoc: Codable {
     var authorId: String
     var kind: ContentKind
     var text: String?
-    var mediaPath: String?
+    /// Cloudinary に置いた写真・動画・音声の URL
+    var mediaURL: String?
     var mediaDuration: Double?
     var allowFridge: Bool
     var openAt: Date
@@ -148,7 +150,8 @@ private struct LoadedContent {
 
 /// Firebase とアプリのデータ（AppDatabase）をつなぐクラス。
 /// - 読み込み: Firestore の変更を監視し、そのたびに AppDatabase を組み立て直して `onUpdate` で渡す
-/// - 書き込み: 操作の前後の差分（DatabaseChanges）を受け取り、Firestore / Storage に書き込む
+/// - 書き込み: 操作の前後の差分（DatabaseChanges）を受け取り、Firestore に書き込む
+///   （写真などのファイルは先に Cloudinary へアップロードする）
 @MainActor
 final class CloudSync {
     enum CloudError: LocalizedError {
@@ -172,7 +175,6 @@ final class CloudSync {
 
     private let clock: BusinessClock
     private lazy var firestore = Firestore.firestore()
-    private lazy var storage = Storage.storage()
 
     // サーバーから受け取ったデータのキャッシュ
     private var userDocs: [String: UserDoc] = [:]
@@ -379,12 +381,12 @@ final class CloudSync {
         let ref = machineRef(machineID).collection("cans").document(canID).collection("private").document("content")
         let doc = try await ref.getDocument().data(as: CanContentDoc.self)
         var localName: String?
-        if let path = doc.mediaPath {
-            let ext = (path as NSString).pathExtension
+        if let urlString = doc.mediaURL, let remoteURL = URL(string: urlString) {
+            let ext = remoteURL.pathExtension
             let name = "\(canID).\(ext.isEmpty ? "dat" : ext)"
-            let url = MediaStore.url(for: name)
-            if !FileManager.default.fileExists(atPath: url.path) {
-                _ = try await storage.reference(withPath: path).writeAsync(toFile: url)
+            let localURL = MediaStore.url(for: name)
+            if !FileManager.default.fileExists(atPath: localURL.path) {
+                try await CloudinaryUploader.download(from: remoteURL, to: localURL)
             }
             localName = name
         }
@@ -587,19 +589,17 @@ final class CloudSync {
         batch.commit(completion: completion("自販機の作成"))
     }
 
-    /// 缶を納品する：メディアを Storage に上げてから、ラベルと中身を Firestore に書く
+    /// 缶を納品する：写真などを Cloudinary に上げてから、ラベルと中身を Firestore に書く
     private func uploadCan(_ can: CanPost) async {
         do {
-            var mediaPath: String?
+            var mediaURL: String?
             if let fileName = can.mediaFileName {
-                let path = "machines/\(can.machineID)/cans/\(can.id)/\(fileName)"
-                _ = try await storage.reference(withPath: path).putFileAsync(from: MediaStore.url(for: fileName))
-                mediaPath = path
+                mediaURL = try await CloudinaryUploader.upload(fileURL: MediaStore.url(for: fileName), kind: can.kind)
             }
             let label = labelDoc(for: can)
             let content = CanContentDoc(
                 canId: can.id, machineId: can.machineID, authorId: can.authorID, kind: can.kind, text: can.text,
-                mediaPath: mediaPath, mediaDuration: can.mediaDuration, allowFridge: can.allowFridge,
+                mediaURL: mediaURL, mediaDuration: can.mediaDuration, allowFridge: can.allowFridge,
                 openAt: label.openAt, disposeAt: label.disposeAt
             )
             contentCache[can.id] = LoadedContent(doc: content, localFileName: can.mediaFileName)
@@ -615,7 +615,11 @@ final class CloudSync {
             pendingCans[can.id] = nil
             contentCache[can.id] = nil
             rebuild()
-            onError?("納品に失敗しました。通信環境を確認してもう一度ためしてください")
+            if let cloudinaryError = error as? CloudinaryError {
+                onError?(cloudinaryError.localizedDescription)
+            } else {
+                onError?("納品に失敗しました。通信環境を確認してもう一度ためしてください")
+            }
         }
     }
 

@@ -20,10 +20,10 @@
 
 | モード | いつ | できること |
 | --- | --- | --- |
-| **Firebase モード** | `CanSNS/GoogleService-Info.plist` があるとき（自動） | 友達と本当にやりとりできる。開店・廃棄はサーバーの時計で判定 |
+| **Firebase モード** | `CanSNS/GoogleService-Info.plist` があるとき（自動） | 友達と本当にやりとりできる。開店・廃棄はサーバーの時計で判定。写真・動画・音声は `CanSNS/Cloudinary-Info.plist` も必要 |
 | **オフライン（デモ）モード** | 設定ファイルがないとき／開発者メニューで切り替えたとき | 端末の中だけ。友達ボット・時刻ずらし・なりきりで1人で全部試せる |
 
-Firebase 側の設定は **[docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md)** を見てください。
+Firebase と Cloudinary（写真・動画・音声の置き場所）の設定は **[docs/SETUP.md](docs/SETUP.md)** を見てください。
 
 ## 1人で全部の流れを試す方法（オフラインモード）
 
@@ -47,10 +47,12 @@ CanSNS/
 │   ├── SkyPalette.swift      時刻ごとの空の色
 │   ├── SoundSynth.swift      「ガコン」「プシュッ」を計算で作る効果音
 │   ├── DatabaseChanges.swift 操作の前後の差分（Firebase に書き込む内容）
+│   ├── Cloudinary.swift      Cloudinary の設定・送信データの組み立て
 │   └── DemoSeeder.swift      デモ用の友達ボット
 ├── App/
 │   ├── AppStore.swift        アプリの状態。オフライン保存と Firebase モードの切り替え
-│   ├── CloudSync.swift       Firebase（ログイン・Firestore・Storage）とのやりとり
+│   ├── CloudSync.swift       Firebase（ログイン・Firestore）とのやりとり
+│   ├── CloudinaryUploader.swift 写真・動画・音声を Cloudinary に送る・受け取る
 │   └── Services.swift        写真・動画・音声の保存、効果音、振動、通知、カメラ
 └── Views/                  画面
     ├── Home/                 自販機・空の背景
@@ -60,9 +62,9 @@ CanSNS/
     ├── Settings/             設定・開発者メニュー
     └── Onboarding/           最初の登録・自販機えらび
 Tests/CanSNSCoreTests/      ルール部分の自動テスト
-firebase/                   Firestore と Storage のセキュリティルール
+firebase/                   Firestore のセキュリティルール
 docs/SPEC.md                仕様と「検討事項」をどう決めたかのメモ
-docs/FIREBASE_SETUP.md      Firebase 側の設定手順
+docs/SETUP.md               Firebase と Cloudinary の設定手順
 ```
 
 ## テストの実行

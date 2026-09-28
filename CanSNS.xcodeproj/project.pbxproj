@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		C0A5E0010000000000000010 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C0A5E0010000000000000020 /* FirebaseAuth */; };
 		C0A5E0010000000000000011 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C0A5E0010000000000000021 /* FirebaseFirestore */; };
-		C0A5E0010000000000000012 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = C0A5E0010000000000000022 /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,7 +30,6 @@
 			files = (
 				C0A5E0010000000000000010 /* FirebaseAuth in Frameworks */,
 				C0A5E0010000000000000011 /* FirebaseFirestore in Frameworks */,
-				C0A5E0010000000000000012 /* FirebaseStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,7 +74,6 @@
 			packageProductDependencies = (
 				C0A5E0010000000000000020 /* FirebaseAuth */,
 				C0A5E0010000000000000021 /* FirebaseFirestore */,
-				C0A5E0010000000000000022 /* FirebaseStorage */,
 			);
 			productName = CanSNS;
 			productReference = C0A5E0010000000000000001 /* CanSNS.app */;
@@ -312,11 +309,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C0A5E0010000000000000030 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
-		};
-		C0A5E0010000000000000022 /* FirebaseStorage */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C0A5E0010000000000000030 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

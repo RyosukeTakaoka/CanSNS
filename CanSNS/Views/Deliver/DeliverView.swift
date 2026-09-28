@@ -131,6 +131,11 @@ struct DeliverView: View {
                 }
             }
             .pickerStyle(.segmented)
+            if draft.kind != .text && !store.canSendMedia {
+                Label(CloudinaryError.notConfigured.localizedDescription, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 
