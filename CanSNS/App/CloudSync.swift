@@ -747,7 +747,11 @@ final class CloudSync {
 
     private func write<T: Encodable>(_ value: T, to ref: DocumentReference, label: String, reportErrors: Bool = true) {
         do {
-            try ref.setData(from: value, completion: reportErrors ? completion(label) : nil)
+            if reportErrors {
+                try ref.setData(from: value, completion: completion(label))
+            } else {
+                try ref.setData(from: value)
+            }
         } catch {
             onError?("\(label)の保存に失敗しました")
         }
