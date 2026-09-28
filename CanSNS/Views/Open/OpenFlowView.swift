@@ -32,8 +32,9 @@ struct OpenFlowView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(hex: 0x0B1030), Color(hex: 0x252A5E)],
-                           startPoint: .top, endPoint: .bottom)
+            // 夜の田んぼの風景を暗くして背景にする（缶と取り出し口が目立つように）
+            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+                .overlay(Color.black.opacity(0.45))
                 .ignoresSafeArea()
 
             if stage == .revealed {
@@ -94,8 +95,9 @@ struct OpenFlowView: View {
                 }
                 roulette
                 Text(hintText)
-                    .font(.headline)
+                    .font(.pixel(18))
                     .foregroundStyle(.white)
+                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
                     .opacity(hintPulse ? 1 : 0.55)
                     .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: hintPulse)
                 Spacer()
@@ -103,8 +105,7 @@ struct OpenFlowView: View {
             .padding()
 
             // 取り出し口（奥）
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.black)
+            PixelFrame(fill: Pixel.ink, border: Theme.machineBody, borderWidth: 6, step: 6)
                 .frame(width: size.width * 0.8, height: 110)
                 .position(x: size.width / 2, y: outletY)
                 .offset(x: outletShake)
@@ -145,18 +146,23 @@ struct OpenFlowView: View {
 
     private func outletFlap(width: CGFloat) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.12)],
-                                     startPoint: .top, endPoint: .bottom))
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(Color.white.opacity(0.4), lineWidth: 2)
+            PixelBox(step: 6)
+                .fill(Color.white.opacity(0.22))
+            PixelBox(step: 6)
+                .stroke(Color.white.opacity(0.5), lineWidth: 3)
+            // フタの上のほうの光
+            Rectangle()
+                .fill(Color.white.opacity(0.3))
+                .frame(height: 4)
+                .padding(.horizontal, 14)
+                .offset(y: -40)
             VStack(spacing: 4) {
-                Image(systemName: "chevron.up")
-                    .font(.title2.bold())
+                Text("↑")
+                    .font(.pixel(26))
                     .offset(y: hintPulse && stage == .inOutlet ? -4 : 2)
                     .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: hintPulse)
                 Text("とりだしぐち")
-                    .font(.caption.bold())
+                    .font(.pixel(14))
             }
             .foregroundStyle(.white.opacity(0.8))
         }
@@ -187,21 +193,20 @@ struct OpenFlowView: View {
             HStack(spacing: 6) {
                 ForEach(0..<4, id: \.self) { index in
                     Text("\(digits[index])")
-                        .font(.system(size: 34, weight: .bold, design: .monospaced))
+                        .font(.pixel(34, fixed: true))
                         .foregroundStyle(Theme.digit)
-                        .shadow(color: Theme.digit, radius: 6)
-                        .frame(width: 34)
+                        .frame(width: 30)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(Color.black, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.2)))
+            .background(PixelFrame(fill: .black, border: Color(hex: 0x5A5F6B), borderWidth: 3, step: 3))
 
             if isWin {
-                Text("🎉 あたり！ 4つそろった！")
-                    .font(.headline)
-                    .foregroundStyle(.yellow)
+                Text("★ あたり！ 4つそろった！ ★")
+                    .font(.pixel(18))
+                    .foregroundStyle(Pixel.yellow)
+                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
                     .transition(.scale.combined(with: .opacity))
             }
         }

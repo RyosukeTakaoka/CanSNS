@@ -22,12 +22,9 @@ struct FridgeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Picker("棚", selection: $shelf) {
-                        ForEach(Shelf.allCases) { shelf in
-                            Text(shelf.rawValue).tag(shelf)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    header
+                    PixelTabs(options: [(Shelf.own, Shelf.own.rawValue), (Shelf.saved, Shelf.saved.rawValue)],
+                              selection: $shelf)
 
                     if cans.isEmpty {
                         emptyView
@@ -37,13 +34,11 @@ struct FridgeView: View {
                         }
                     }
                 }
-                .padding()
+                .padding(.horizontal, 22)
+                .padding(.vertical, 16)
             }
-            .background(
-                LinearGradient(colors: [Theme.fridgeInside, Color.white], startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-            )
-            .navigationTitle("冷蔵庫")
+            .background(FridgeInteriorView().ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $selected) { can in
                 NavigationStack {
                     CanContentView(can: can)
@@ -65,49 +60,75 @@ struct FridgeView: View {
         }
     }
 
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("冷蔵庫")
+                    .font(.pixel(28))
+                    .foregroundStyle(Pixel.ink)
+                Text("廃棄されたあとも、ここで冷やしておける")
+                    .font(.pixel(12))
+                    .foregroundStyle(Pixel.ink.opacity(0.6))
+            }
+            Spacer(minLength: 0)
+            // 冷蔵庫の温度表示（飾り）
+            Text("4℃")
+                .font(.pixel(18))
+                .foregroundStyle(Color(hex: 0x7CF0FF))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(PixelFrame(fill: Color(hex: 0x16303A), border: Pixel.ink, borderWidth: 3, step: 3))
+        }
+    }
+
     private var emptyView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "refrigerator")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                ForEach(0..<3, id: \.self) { _ in
+                    EmptyCanView(width: 34, tint: Color(hex: 0x3F6B7A))
+                }
+            }
             Text(shelf == .own
                  ? "まだ空っぽです。\n自販機の缶は翌朝6:00に廃棄されると、ここに入ります。"
                  : "まだ空っぽです。\n開けた友達の缶を「冷蔵庫に入れる」と、ここに残せます。")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.pixel(14))
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            FridgeShelf()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .pixelPaper(fill: Color.white.opacity(0.85), border: Color(hex: 0x3F6B7A))
+        .padding(.top, 24)
     }
 
     private func shelfRow(day: BusinessDay, cans: [CanPost]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // マスキングテープ風の日付ラベル
             Text(day.shortText)
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                .font(.pixel(14))
+                .foregroundStyle(Pixel.ink)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(Color(hex: 0xFFE9A8).opacity(0.95))
+                .overlay(Rectangle().strokeBorder(Pixel.ink.opacity(0.5), lineWidth: 1.5))
+                .rotationEffect(.degrees(-2))
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
                 ForEach(cans) { can in
                     Button {
                         selected = can
                     } label: {
                         VStack(spacing: 4) {
-                            CanView(can: can, emoji: store.user(can.authorID)?.emoji ?? "🙂", width: 52,
+                            CanView(can: can, emoji: store.user(can.authorID)?.emoji ?? "🙂", width: 50,
                                     showsKind: !can.isContentHidden)
                             Text(store.user(can.authorID)?.name ?? "")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.pixel(11))
+                                .foregroundStyle(Pixel.ink.opacity(0.75))
                                 .lineLimit(1)
                         }
                     }
                     .buttonStyle(.plain)
                 }
             }
-            // 冷蔵庫の棚板
-            RoundedRectangle(cornerRadius: 2)
-                .fill(LinearGradient(colors: [Color.white, Color(hex: 0xB9D3E0)], startPoint: .top, endPoint: .bottom))
-                .frame(height: 8)
-                .shadow(color: .black.opacity(0.1), radius: 2, y: 2)
+            FridgeShelf()
         }
     }
 
@@ -120,6 +141,61 @@ struct FridgeView: View {
     private func groupByDay(_ cans: [CanPost]) -> [DayGroup] {
         let grouped = Dictionary(grouping: cans) { $0.businessDay }
         return grouped.keys.sorted(by: >).map { day in DayGroup(day: day, cans: grouped[day] ?? []) }
+    }
+}
+
+/// 冷蔵庫の庫内（ドット絵）：ひんやりした水色の壁・上の庫内灯・左右のドアのふち
+struct FridgeInteriorView: View {
+    var body: some View {
+        Canvas { context, size in
+            guard size.width > 0, size.height > 0 else { return }
+            let p: CGFloat = 3
+            func fill(_ rect: CGRect, _ color: Color) {
+                context.fill(Path(rect), with: .color(color))
+            }
+            // 庫内の壁（上ほど明るい、段々の色帯）
+            let bands = 8
+            let bandHeight = (size.height / CGFloat(bands) / p).rounded(.up) * p
+            for index in 0..<bands {
+                let t = Double(index) / Double(bands - 1)
+                let color = Color(rgb: RGB(hex: 0xEAF8FC).mixed(with: RGB(hex: 0xC4E3EE), amount: t))
+                fill(CGRect(x: 0, y: CGFloat(index) * bandHeight, width: size.width, height: bandHeight + 1), color)
+            }
+            // 奥の壁の縦のみぞ
+            var x: CGFloat = 36
+            while x < size.width - 20 {
+                fill(CGRect(x: x, y: 0, width: p, height: size.height), Color(hex: 0xB3D6E3).opacity(0.6))
+                x += 48
+            }
+            // 上の庫内灯と、その光
+            let lampWidth = min(120, size.width * 0.35)
+            let lampX = (size.width - lampWidth) / 2
+            fill(CGRect(x: lampX - p * 6, y: 0, width: lampWidth + p * 12, height: p * 10),
+                 Color(hex: 0xFFF6C8).opacity(0.35))
+            fill(CGRect(x: lampX, y: 0, width: lampWidth, height: p * 4), Color(hex: 0xFFE27A))
+            fill(CGRect(x: lampX, y: p * 4, width: lampWidth, height: p), Color(hex: 0xC9A640))
+            // 左右のドアのふち（冷蔵庫の本体）
+            let edge: CGFloat = 12
+            fill(CGRect(x: 0, y: 0, width: edge, height: size.height), Color(hex: 0xF4F1E4))
+            fill(CGRect(x: edge, y: 0, width: p, height: size.height), Pixel.ink)
+            fill(CGRect(x: size.width - edge, y: 0, width: edge, height: size.height), Color(hex: 0xF4F1E4))
+            fill(CGRect(x: size.width - edge - p, y: 0, width: p, height: size.height), Pixel.ink)
+        }
+        .background(Color(hex: 0xD6EEF5))
+        .accessibilityHidden(true)
+    }
+}
+
+/// ガラスの棚板（ドット絵）
+struct FridgeShelf: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.white.frame(height: 2)
+            Color(hex: 0xBFE6F2).frame(height: 5)
+            Color(hex: 0x7FA9B8).frame(height: 3)
+            Pixel.ink.opacity(0.7).frame(height: 2)
+        }
+        .padding(.horizontal, -6)
     }
 }
 

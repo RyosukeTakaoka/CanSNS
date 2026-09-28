@@ -84,26 +84,27 @@ struct HomeView: View {
         let next = store.clock.nextTransition(after: now)
         let remaining = BusinessClock.countdownText(next.timeIntervalSince(now))
         return HStack(spacing: 10) {
-            Image(systemName: phase == .open ? "moon.stars.fill" : "sun.max.fill")
-                .font(.title2)
-                .foregroundStyle(phase == .open ? Color.yellow : Color.orange)
-            VStack(alignment: .leading, spacing: 2) {
+            Text(phase == .open ? "★" : "☀")
+                .font(.pixel(26))
+                .foregroundStyle(phase == .open ? Pixel.yellow : Color.orange)
+            VStack(alignment: .leading, spacing: 4) {
                 Text("\(today.shortText)の自販機・\(phase.title)")
-                    .font(.headline)
+                    .font(.pixel(17))
                 Text(phase == .open ? "廃棄（翌6:00）まで \(remaining)" : "開店（21:00）まで \(remaining)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.pixel(14))
+                    .opacity(0.8)
             }
-            Spacer()
+            Spacer(minLength: 0)
             if store.isTimeShifted {
-                Label("時刻テスト中", systemImage: "clock.arrow.circlepath")
-                    .font(.caption2.bold())
-                    .padding(6)
-                    .background(Color.orange.opacity(0.2), in: Capsule())
+                Text("時刻テスト中")
+                    .font(.pixel(11))
+                    .foregroundStyle(Pixel.ink)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.orange)
             }
         }
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .pixelWindow()
     }
 
     private func recruitingBanner(machine: Machine) -> some View {
@@ -112,19 +113,17 @@ struct HomeView: View {
             showInvite = true
         } label: {
             HStack {
-                Image(systemName: "person.2.badge.plus")
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("あと\(needed)人で開店できます")
-                        .font(.subheadline.bold())
+                        .font(.pixel(16))
                     Text("招待コード \(machine.inviteCode) を友達に送ろう")
-                        .font(.caption)
+                        .font(.pixel(12))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
+                Spacer(minLength: 0)
+                Text("→")
+                    .font(.pixel(16))
             }
-            .foregroundStyle(.white)
-            .padding(14)
-            .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .pixelPaper(fill: Color(hex: 0xFFB347))
         }
         .buttonStyle(.plain)
     }
@@ -138,25 +137,19 @@ struct HomeView: View {
                 SoundPlayer.shared.play(.beep)
                 showDeliver = true
             } label: {
-                Label(myCans.isEmpty ? "今日の缶を納品する" : "もう1本納品する", systemImage: "shippingbox.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .foregroundStyle(.white)
-                    .background(Theme.machineBody.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                Text(myCans.isEmpty ? "今日の缶を納品する" : "もう1本納品する")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PixelButtonStyle(color: Theme.machineBody, fontSize: 18))
 
             if !myCans.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("今日納品した缶 \(myCans.count)本")
-                            .font(.subheadline.bold())
-                        Spacer()
+                            .font(.pixel(15))
+                        Spacer(minLength: 0)
                         Text(store.clock.phase(at: store.now) == .delivery ? "21:00の開店を待っています" : "営業中")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.pixel(11))
+                            .opacity(0.8)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
@@ -167,8 +160,8 @@ struct HomeView: View {
                                     VStack(spacing: 4) {
                                         CanView(can: can, emoji: me.emoji, width: 40)
                                         Text("開けた人 \(store.db.openings(of: can.id).count)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                            .font(.pixel(11))
+                                            .opacity(0.8)
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -177,8 +170,7 @@ struct HomeView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                .padding(14)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .pixelWindow()
             }
         }
     }
@@ -269,28 +261,17 @@ struct EffectBanner: View {
             Text(effect.emoji)
                 .font(.title)
                 .scaleEffect(glow ? 1.15 : 0.95)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(effect.title)
-                    .font(.headline)
+                    .font(.pixel(17))
+                    .foregroundStyle(glow ? Pixel.yellow : Pixel.windowBorder)
                 Text(effect.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.pixel(12))
+                    .opacity(0.85)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    AngularGradient(colors: [.pink, .purple, .cyan, .yellow, .pink], center: .center),
-                    lineWidth: 2
-                )
-                .opacity(glow ? 1 : 0.5)
-        )
+        .pixelWindow(padding: 12)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                 glow = true

@@ -6,13 +6,15 @@ struct OnboardingView: View {
     @State private var name = ""
     @State private var emoji = "🙂"
 
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+
     var body: some View {
         ZStack {
             SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
                 .ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 22) {
-                    HStack(spacing: 10) {
+                    HStack(alignment: .bottom, spacing: 12) {
                         CanView(title: "今日", mood: .hot, kind: .photo, pattern: .wave, emoji: "🐱", width: 54)
                             .rotationEffect(.degrees(-8))
                         CanView(title: "CanSNS", mood: .cold, kind: .text, pattern: .stripe, emoji: emoji, width: 70)
@@ -21,38 +23,28 @@ struct OnboardingView: View {
                     }
                     .padding(.top, 40)
 
-                    VStack(spacing: 6) {
+                    VStack(spacing: 8) {
                         Text("CanSNS")
-                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .font(.pixel(44))
                         Text("友達の今日を、1本ずつ受け取る。")
-                            .font(.headline)
+                            .font(.pixel(16))
                     }
                     .foregroundStyle(.white)
-                    .shadow(radius: 6)
+                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
 
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("名前")
-                            .font(.subheadline.bold())
-                        TextField("例：たかおか", text: $name)
-                            .textFieldStyle(.roundedBorder)
-                        Text("アイコン")
-                            .font(.subheadline.bold())
+                        PixelHeading(text: "なまえ")
+                        PixelTextField(placeholder: "例：たかおか", text: $name)
+                        PixelHeading(text: "アイコン")
                         EmojiGrid(selection: $emoji)
-                        Button {
+                        Button("はじめる") {
                             store.createAccount(name: name, emoji: emoji)
                             NotificationScheduler.requestAndSchedule()
-                        } label: {
-                            Text("はじめる")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .foregroundStyle(.white)
-                                .background(Theme.machineBody, in: RoundedRectangle(cornerRadius: 14))
                         }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                        .buttonStyle(PixelButtonStyle(color: Theme.machineBody, fontSize: 18))
+                        .disabled(trimmedName.isEmpty)
                     }
-                    .card()
+                    .pixelWindow(padding: 16)
                 }
                 .padding()
             }
@@ -72,73 +64,77 @@ struct MachineSetupView: View {
     @State private var isJoining = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("自販機をえらぼう")
-                    .font(.title.bold())
-                Text("自販機 ＝ 友達グループです。少人数（\(MachineRules.minimumMembersToOpen)〜\(MachineRules.maxMembers)人）で使います。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("新しく自販機を置く", systemImage: "plus.square.fill")
-                        .font(.headline)
-                    TextField("自販機の名前（例：放課後の自販機）", text: $machineName)
-                        .textFieldStyle(.roundedBorder)
-                    Button("置く") {
-                        store.createMachine(name: machineName)
-                        finish()
+        ZStack {
+            SkyBackgroundView(date: store.now, calendar: store.clock.calendar)
+                .ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("自販機をえらぼう")
+                            .font(.pixel(28))
+                        Text("自販機 ＝ 友達グループです。少人数（\(MachineRules.minimumMembersToOpen)〜\(MachineRules.maxMembers)人）で使います。")
+                            .font(.pixel(13))
                     }
-                    .buttonStyle(.borderedProminent)
-                }
-                .card()
+                    .foregroundStyle(.white)
+                    .shadow(color: Pixel.ink, radius: 0, x: 2, y: 2)
+                    .padding(.top, isSheet ? 8 : 24)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("招待コードで参加する", systemImage: "person.2.fill")
-                        .font(.headline)
-                    TextField("6文字のコード", text: $inviteCode)
-                        .textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                    Button {
-                        join()
-                    } label: {
-                        if isJoining {
-                            ProgressView()
-                        } else {
-                            Text("参加する")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(inviteCode.count < 6 || isJoining)
-                    if store.mode == .local {
-                        Text("※ オフラインモードでは、同じ端末で作った自販機にだけ参加できます")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .card()
-
-                if store.mode == .local {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("デモで試す", systemImage: "sparkles")
-                            .font(.headline)
-                        Text("友達ボット3人がいる自販機で、納品→開店→開封→冷蔵庫の流れを1人で体験できます。")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Button("デモの自販機を置く") {
-                            store.startDemo()
+                    // 新しく置く
+                    VStack(alignment: .leading, spacing: 12) {
+                        PixelHeading(text: "新しく自販機を置く")
+                        PixelTextField(placeholder: "名前（例：放課後の自販機）", text: $machineName)
+                        Button("ここに置く") {
+                            store.createMachine(name: machineName)
                             finish()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(PixelButtonStyle(color: Theme.machineBody))
                     }
-                    .card()
+                    .pixelWindow()
+
+                    // 招待コードで参加
+                    VStack(alignment: .leading, spacing: 12) {
+                        PixelHeading(text: "招待コードで参加する")
+                        PixelTextField(placeholder: "6文字のコード", text: $inviteCode, monospaced: true)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        Button {
+                            join()
+                        } label: {
+                            if isJoining {
+                                ProgressView()
+                                    .tint(Pixel.ink)
+                            } else {
+                                Text("参加する")
+                            }
+                        }
+                        .buttonStyle(PixelButtonStyle(color: Pixel.yellow, textColor: Pixel.ink))
+                        .disabled(inviteCode.trimmingCharacters(in: .whitespaces).count < 6 || isJoining)
+                        if store.mode == .local {
+                            Text("※ オフラインモードでは、同じ端末で作った自販機にだけ参加できます")
+                                .font(.pixel(11))
+                                .opacity(0.75)
+                        }
+                    }
+                    .pixelWindow()
+
+                    if store.mode == .local {
+                        VStack(alignment: .leading, spacing: 12) {
+                            PixelHeading(text: "デモで試す")
+                            Text("友達ボット3人がいる自販機で、納品→開店→開封→冷蔵庫の流れを1人で体験できます。")
+                                .font(.pixel(13))
+                                .opacity(0.85)
+                            Button("デモの自販機を置く") {
+                                store.startDemo()
+                                finish()
+                            }
+                            .buttonStyle(PixelButtonStyle(color: Pixel.green))
+                        }
+                        .pixelWindow()
+                    }
                 }
+                .padding()
             }
-            .padding()
         }
-        .background(Color(.systemGroupedBackground))
         .toolbar {
             if isSheet {
                 ToolbarItem(placement: .cancellationAction) {

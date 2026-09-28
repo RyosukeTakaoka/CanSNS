@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 缶の絵。ラベルの色は「今日の気分」、柄はテンプレート、アイコンは中身の種類で決まる。
+/// 缶の絵（ドット絵）。ラベルの色は「今日の気分」、柄はテンプレートで決まる。
+/// 中身の種類のアイコンは、開けたあとだけ出す（showsKind）。
 struct CanView: View {
     var title: String
     var mood: Mood
@@ -30,158 +31,159 @@ struct CanView: View {
     }
 
     private var height: CGFloat { width * 1.75 }
-    private var corner: CGFloat { width * 0.16 }
+    /// ドット1つぶんの大きさ（缶の大きさに合わせる）
+    private var dot: CGFloat { max(1, (width / 14).rounded(.down)) }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // 銀色の胴体
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(LinearGradient(
-                    colors: [Color(white: 0.55), Color(white: 0.93), Color(white: 0.72), Color(white: 0.5)],
-                    startPoint: .leading, endPoint: .trailing
-                ))
-
-            label
-                .frame(width: width, height: height * 0.7)
-                .offset(y: height * 0.16)
-
-            // 丸みを出すための光と影
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(LinearGradient(
-                    stops: [
-                        .init(color: .black.opacity(0.28), location: 0),
-                        .init(color: .clear, location: 0.2),
-                        .init(color: .white.opacity(0.38), location: 0.3),
-                        .init(color: .clear, location: 0.45),
-                        .init(color: .black.opacity(0.32), location: 1),
-                    ],
-                    startPoint: .leading, endPoint: .trailing
-                ))
-                .allowsHitTesting(false)
-
-            lid
+        ZStack {
+            // 黒い縁取り
+            PixelBox(step: dot)
+                .fill(Pixel.ink)
+            VStack(spacing: 0) {
+                topRim
+                    .frame(height: height * 0.1)
+                label
+                    .frame(maxHeight: .infinity)
+                bottomRim
+                    .frame(height: height * 0.07)
+            }
+            .padding(dot)
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: width * 0.04, y: width * 0.03)
         .accessibilityElement()
         .accessibilityLabel(showsKind ? "\(title)、\(mood.stripText)、\(kind.label)" : "\(title)、\(mood.stripText)")
     }
 
+    // MARK: - 部品
+
+    private var silver: Color { Color(hex: 0xD9DDE3) }
+    private var silverDark: Color { Color(hex: 0x8A8F99) }
+
+    /// 上ぶたとプルタブ
+    private var topRim: some View {
+        ZStack {
+            silver
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                silverDark.frame(height: dot)
+            }
+            if tabOpen {
+                // 飲み口の穴
+                Pixel.ink
+                    .frame(width: width * 0.26, height: dot * 1.5)
+            }
+            Rectangle()
+                .fill(Color(hex: 0xB5BAC4))
+                .overlay(Rectangle().strokeBorder(silverDark, lineWidth: max(1, dot / 2)))
+                .frame(width: width * 0.32, height: dot * 1.6)
+                .rotation3DEffect(.degrees(tabOpen ? 70 : 0), axis: (x: 1, y: 0, z: 0), anchor: .bottom)
+                .offset(y: tabOpen ? -dot : 0)
+        }
+    }
+
+    private var bottomRim: some View {
+        ZStack {
+            silver
+            VStack(spacing: 0) {
+                silverDark.frame(height: dot)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     private var label: some View {
         ZStack {
-            LinearGradient(colors: [mood.color, mood.deepColor], startPoint: .top, endPoint: .bottom)
+            mood.color
             PatternOverlay(pattern: pattern)
-            VStack(spacing: width * 0.05) {
+            // 右側の影
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                mood.deepColor.frame(width: width * 0.16)
+            }
+            // 左側の白いハイライト（アイコンの缶と同じ）
+            HStack(spacing: 0) {
+                Color.clear.frame(width: width * 0.14)
+                Color.white.opacity(0.8).frame(width: dot)
+                Spacer(minLength: 0)
+            }
+            VStack(spacing: width * 0.04) {
                 if showsKind {
                     Image(systemName: kind.symbol)
                         .font(.system(size: width * 0.15, weight: .bold))
                 }
                 Text(title)
-                    .font(.system(size: width * 0.17, weight: .heavy, design: .rounded))
+                    .font(.pixel(width * 0.2, fixed: true))
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .minimumScaleFactor(0.4)
-                    .padding(.horizontal, width * 0.07)
+                    .padding(.horizontal, width * 0.1)
                 Text(emoji)
                     .font(.system(size: width * 0.17))
             }
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
+            .shadow(color: Pixel.ink, radius: 0, x: max(1, dot / 2), y: max(1, dot / 2))
         }
-    }
-
-    /// 上ぶたとプルタブ
-    private var lid: some View {
-        ZStack {
-            Rectangle()
-                .fill(LinearGradient(colors: [Color(white: 0.8), Color(white: 0.45)],
-                                     startPoint: .top, endPoint: .bottom))
-            if tabOpen {
-                Capsule()
-                    .fill(Color.black.opacity(0.8))
-                    .frame(width: width * 0.22, height: height * 0.028)
-            }
-            Capsule()
-                .fill(Color(white: 0.88))
-                .overlay(Capsule().stroke(Color(white: 0.5), lineWidth: 0.5))
-                .frame(width: width * 0.34, height: height * 0.032)
-                .rotation3DEffect(.degrees(tabOpen ? 70 : 0), axis: (x: 1, y: 0, z: 0), anchor: .bottom)
-                .offset(y: tabOpen ? -height * 0.012 : 0)
-        }
-        .frame(width: width, height: height * 0.075)
     }
 }
 
-/// まだ納品されていない枠に置く、灰色の缶のシルエット
+/// まだ納品されていない枠に置く、缶の形の点線
 struct EmptyCanView: View {
     var width: CGFloat
-    var symbol: String = "questionmark"
+    /// 中に出す文字（「?」や「+」）
+    var glyph: String = "?"
+    var tint: Color = Pixel.ink
+
+    private var dot: CGFloat { max(1, (width / 14).rounded(.down)) }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: width * 0.16, style: .continuous)
-            .fill(Color.white.opacity(0.18))
-            .overlay(
-                RoundedRectangle(cornerRadius: width * 0.16, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            )
-            .overlay(
-                Image(systemName: symbol)
-                    .font(.system(size: width * 0.3, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-            )
-            .frame(width: width, height: width * 1.75)
+        ZStack {
+            PixelBox(step: dot)
+                .fill(tint.opacity(0.08))
+            PixelBox(step: dot)
+                .stroke(tint.opacity(0.35), style: StrokeStyle(lineWidth: max(1, dot / 2), dash: [dot * 1.5, dot]))
+            Text(glyph)
+                .font(.pixel(width * 0.4, fixed: true))
+                .foregroundStyle(tint.opacity(0.4))
+        }
+        .frame(width: width, height: width * 1.75)
     }
 }
 
-/// ラベルの柄（ストライプ・ドット・ウェーブ）
+/// ラベルの柄（ストライプ・ドット・ウェーブ）を、ドット単位で描く
 struct PatternOverlay: View {
     var pattern: LabelPattern
 
     var body: some View {
         Canvas { context, size in
-            let color = GraphicsContext.Shading.color(.white.opacity(0.2))
-            switch pattern {
-            case .plain:
-                break
-            case .stripe:
-                var x = -size.height
-                while x < size.width {
-                    var path = Path()
-                    path.move(to: CGPoint(x: x, y: size.height))
-                    path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                    context.stroke(path, with: color, lineWidth: size.width * 0.08)
-                    x += size.width * 0.28
-                }
-            case .dots:
-                let step = size.width * 0.22
-                let radius = step * 0.22
-                var y = step / 2
-                var row = 0
-                while y < size.height {
-                    var x = row.isMultiple(of: 2) ? step / 2 : step
-                    while x < size.width {
-                        let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
-                        context.fill(Path(ellipseIn: rect), with: color)
-                        x += step
+            guard pattern != .plain, size.width > 0, size.height > 0 else { return }
+            let p = max(1, (size.width / 12).rounded(.down))
+            let columns = Int(size.width / p) + 1
+            let rows = Int(size.height / p) + 1
+            let shading = GraphicsContext.Shading.color(.white.opacity(0.22))
+
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let filled: Bool
+                    switch pattern {
+                    case .plain:
+                        filled = false
+                    case .stripe:
+                        // 斜めのしま
+                        filled = (column + row) % 5 == 0
+                    case .dots:
+                        // 互い違いの四角い水玉
+                        let shift = (row / 4).isMultiple(of: 2) ? 0 : 2
+                        filled = row % 4 == 1 && (column + shift) % 4 == 1
+                    case .wave:
+                        // 5段ごとの、ガタガタの波線
+                        let offset = Int((sin(Double(column) / 1.6) * 1.2).rounded())
+                        let base = row - offset
+                        filled = base >= 0 && base % 5 == 2
                     }
-                    y += step
-                    row += 1
-                }
-            case .wave:
-                let lines = 5
-                let amplitude = size.height * 0.03
-                for line in 0..<lines {
-                    let baseY = size.height * (CGFloat(line) + 0.5) / CGFloat(lines)
-                    var path = Path()
-                    path.move(to: CGPoint(x: 0, y: baseY))
-                    var x: CGFloat = 0
-                    while x <= size.width {
-                        let angle = Double(x / size.width) * 2 * Double.pi * 1.5
-                        path.addLine(to: CGPoint(x: x, y: baseY + amplitude * CGFloat(sin(angle))))
-                        x += 2
+                    if filled {
+                        let rect = CGRect(x: CGFloat(column) * p, y: CGFloat(row) * p, width: p, height: p)
+                        context.fill(Path(rect), with: shading)
                     }
-                    context.stroke(path, with: color, lineWidth: size.width * 0.04)
                 }
             }
         }

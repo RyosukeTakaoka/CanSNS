@@ -50,6 +50,7 @@ enum SlotLamp {
     }
 }
 
+/// 自販機（アプリアイコンと同じ、赤いドット絵の自販機）
 struct VendingMachineView: View {
     var machineName: String
     var slots: [MachineSlot]
@@ -60,77 +61,124 @@ struct VendingMachineView: View {
     var digits: String
     var onTap: (MachineSlot) -> Void
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
-    private let canWidth: CGFloat = 42
+    @State private var neonPhase = false
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 4)
+    private let canWidth: CGFloat = 36
+    private let sidePanelWidth: CGFloat = 56
 
     private var hasNeon: Bool { effects.contains(.limitedNeon) }
     private var isFull: Bool { effects.contains(.fullStock) }
 
     var body: some View {
         VStack(spacing: 0) {
-            sign
-            VStack(spacing: 10) {
-                display
-                controlPanel
-                outlet
-            }
-            .padding(12)
+            machineBody
+            feet
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(LinearGradient(colors: [Theme.machineBody, Theme.machineBodyDark],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(hasNeon ? neonGradient : AngularGradient(colors: [Theme.machineTrim, Theme.machineTrim], center: .center),
-                              lineWidth: hasNeon ? 4 : 3)
-                .shadow(color: hasNeon ? Color.pink.opacity(0.9) : .clear, radius: 10)
-        )
-        .shadow(color: isOpenPhase ? Color(hex: 0xBFE3FF).opacity(0.55) : .black.opacity(0.35),
-                radius: isOpenPhase ? 28 : 12, y: 6)
         .frame(maxWidth: 340)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                neonPhase = true
+            }
+        }
     }
 
-    private var neonGradient: AngularGradient {
-        AngularGradient(colors: [.pink, .purple, .cyan, .green, .yellow, .orange, .pink], center: .center)
+    // MARK: - 本体
+
+    private var machineBody: some View {
+        VStack(spacing: 8) {
+            sign
+            HStack(alignment: .top, spacing: 8) {
+                display
+                sidePanel
+            }
+            outletRow
+        }
+        .padding(12)
+        .background(bodyShape)
+        .background(nightGlow)
+    }
+
+    private var bodyShape: some View {
+        ZStack {
+            PixelFrame(fill: Theme.machineBody, border: Pixel.ink, borderWidth: 4, step: 6,
+                       shadow: .black.opacity(0.35), shadowOffset: 6)
+            // 右側の影（立体感）
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Theme.machineBodyDark.frame(width: 10)
+            }
+            .padding(.vertical, 8)
+            .padding(.trailing, 4)
+            // 左上のハイライト
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    Theme.machineHighlight.frame(width: 16, height: 4)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 0) {
+                    Theme.machineHighlight.frame(width: 4, height: 12)
+                    Spacer(minLength: 0)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 7)
+            .padding(.leading, 7)
+            // 限定ネオン：縁がピンクと水色に点滅する
+            if hasNeon {
+                PixelBox(step: 6)
+                    .stroke(neonPhase ? Color.pink : Color.cyan, lineWidth: 4)
+                    .padding(-4)
+            }
+        }
+    }
+
+    /// 開店中は、自販機のまわりがぼんやり明るい
+    @ViewBuilder
+    private var nightGlow: some View {
+        if isOpenPhase {
+            PixelBox(step: 12)
+                .fill(Color(hex: 0xFFF1B8).opacity(0.22))
+                .padding(-14)
+        }
     }
 
     // MARK: - 上の看板
 
     private var sign: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 5) {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
                 // レベルが上がるとライトが増える
                 ForEach(0..<min(max(level, 1), 8), id: \.self) { _ in
-                    Circle()
-                        .fill(isOpenPhase ? Color.yellow : Color.yellow.opacity(0.35))
-                        .frame(width: 6, height: 6)
-                        .shadow(color: isOpenPhase ? .yellow : .clear, radius: 3)
+                    Rectangle()
+                        .fill(isOpenPhase ? Pixel.yellow : Pixel.yellow.opacity(0.35))
+                        .frame(width: 5, height: 5)
                 }
             }
             Text(machineName)
-                .font(.system(size: 20, weight: .black, design: .rounded))
+                .font(.pixel(18, fixed: true))
                 .foregroundStyle(hasNeon ? Color.pink : Theme.machineBodyDark)
-                .shadow(color: hasNeon ? .pink : .clear, radius: 6)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
             Text(isFull ? "満タン！全員そろいました" : "Lv.\(level) \(MachineGrowth.title(for: level))")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(Theme.machineBodyDark.opacity(0.8))
+                .font(.pixel(10, fixed: true))
+                .foregroundStyle(Pixel.ink.opacity(0.7))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, style: .continuous)
-                .fill(Theme.machineTrim)
+            PixelFrame(fill: isOpenPhase ? Pixel.cream : Color(hex: 0xD9CFB0), border: Pixel.ink,
+                       borderWidth: 3, step: 3)
         )
     }
 
     // MARK: - 缶が並ぶショーケース
 
     private var display: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
+        LazyVGrid(columns: columns, spacing: 10) {
             ForEach(slots) { slot in
                 Button {
                     onTap(slot)
@@ -140,33 +188,23 @@ struct VendingMachineView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(10)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(LinearGradient(
-                    colors: isOpenPhase
-                        ? [Color(hex: 0xF4FAFF), Color(hex: 0xC9E4FF)]
-                        : [Color(hex: 0xC5D3E6), Color(hex: 0x9FB3CF)],
-                    startPoint: .top, endPoint: .bottom
-                ))
-        )
-        .overlay(
-            // ガラスの反射
-            LinearGradient(colors: [.white.opacity(0.35), .clear, .clear],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .allowsHitTesting(false)
+            PixelFrame(fill: isOpenPhase ? Color(hex: 0xF4FBFF) : Color(hex: 0xC9D3DF), border: Pixel.ink,
+                       borderWidth: 4, step: 3)
         )
     }
 
     @ViewBuilder
     private func slotView(_ slot: MachineSlot) -> some View {
         let lamp = lamps[slot.id] ?? .recruiting
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             Group {
                 switch slot.content {
                 case .recruiting:
-                    EmptyCanView(width: canWidth, symbol: "person.badge.plus")
+                    EmptyCanView(width: canWidth, glyph: "+")
                 case .soldOut:
                     EmptyCanView(width: canWidth)
                 case .stocked(let can, let author):
@@ -174,41 +212,48 @@ struct VendingMachineView: View {
                         .overlay(alignment: .topTrailing) {
                             if slot.isNew {
                                 NewBadge()
-                                    .offset(x: 12, y: -6)
+                                    .offset(x: 10, y: -6)
                             }
                         }
                 }
             }
             .frame(height: canWidth * 1.75)
 
-            // 値段の位置に、気分の帯と名前
+            // 棚板
+            Pixel.ink.opacity(0.85)
+                .frame(height: 3)
+
             Group {
+                // 値段の位置に、気分の帯
                 switch slot.content {
                 case .stocked(let can, _):
                     MoodStrip(mood: can.mood, fontSize: 8)
                 default:
                     Text("ーーー")
-                        .font(.system(size: 8, weight: .heavy))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 1.6)
+                        .font(.pixel(8, fixed: true))
+                        .foregroundStyle(Pixel.ink.opacity(0.4))
                 }
             }
-            .frame(height: 13)
+            .frame(height: 12)
 
             Text(ownerName(slot))
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(hex: 0x33415C))
+                .font(.pixel(9, fixed: true))
+                .foregroundStyle(Pixel.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .padding(.horizontal, 2)
 
             // 押しボタンのランプ
             Text(lamp.text)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
-                .foregroundStyle(lamp.isLit ? Color.black.opacity(0.75) : Color.white.opacity(0.6))
+                .font(.pixel(8, fixed: true))
+                .foregroundStyle(lamp.isLit ? Pixel.ink : Color.white.opacity(0.7))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(lamp.color))
-                .shadow(color: lamp.isLit ? lamp.color : .clear, radius: 4)
+                .padding(.vertical, 2)
+                .background(lamp.color)
+                .overlay(Rectangle().strokeBorder(Pixel.ink, lineWidth: 1.5))
+                .padding(.horizontal, 3)
         }
     }
 
@@ -220,74 +265,119 @@ struct VendingMachineView: View {
         }
     }
 
-    // MARK: - ルーレットとコイン投入口（飾り）
+    // MARK: - 右側のパネル（ルーレット・コイン投入口・テンキー・札入れ）
 
-    private var controlPanel: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 3) {
+    private var sidePanel: some View {
+        VStack(spacing: 8) {
+            // 4桁ルーレット
+            HStack(spacing: 1) {
                 ForEach(Array(digits.enumerated()), id: \.offset) { _, character in
                     Text(String(character))
-                        .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        .font(.pixel(12, fixed: true))
                         .foregroundStyle(Theme.digit)
-                        .shadow(color: Theme.digit.opacity(0.8), radius: 4)
-                        .frame(width: 18)
                 }
             }
-            .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
+            .frame(maxWidth: .infinity)
+            .background(PixelFrame(fill: .black, border: Pixel.ink, borderWidth: 2, step: 2))
 
-            Spacer()
-
-            VStack(spacing: 2) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.black.opacity(0.8))
-                    .frame(width: 4, height: 22)
-                    .padding(6)
-                    .background(Color(white: 0.8), in: RoundedRectangle(cornerRadius: 6))
-                Text("FREE")
-                    .font(.system(size: 7, weight: .black))
-                    .foregroundStyle(.white.opacity(0.8))
+            // コイン投入口
+            ZStack {
+                PixelFrame(fill: Theme.panel, border: Pixel.ink, borderWidth: 2, step: 2)
+                Rectangle()
+                    .fill(Color(hex: 0xB5BAC4))
+                    .frame(width: 4, height: 14)
             }
+            .frame(width: 30, height: 26)
+
+            // テンキー
+            VStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { _ in
+                    HStack(spacing: 3) {
+                        ForEach(0..<2, id: \.self) { _ in
+                            Rectangle()
+                                .fill(Color(hex: 0xD9DDE3))
+                                .frame(width: 9, height: 7)
+                        }
+                    }
+                }
+            }
+            .padding(5)
+            .background(PixelFrame(fill: Theme.panel, border: Pixel.ink, borderWidth: 2, step: 2))
+
+            // 札入れ
+            ZStack {
+                PixelFrame(fill: Pixel.yellow, border: Pixel.ink, borderWidth: 2, step: 2)
+                Rectangle()
+                    .fill(Pixel.ink)
+                    .frame(width: 18, height: 3)
+            }
+            .frame(width: 34, height: 18)
+
+            Text("FREE")
+                .font(.pixel(9, fixed: true))
+                .foregroundStyle(.white)
         }
-        .padding(8)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
+        .frame(width: sidePanelWidth)
     }
 
     // MARK: - 取り出し口
 
-    private var outlet: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.black.opacity(0.85))
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(colors: [Color.white.opacity(0.3), Color.white.opacity(0.1)],
-                                     startPoint: .top, endPoint: .bottom))
-                .padding(5)
-            Text("とりだしぐち")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.7))
+    private var outletRow: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                PixelFrame(fill: Pixel.ink, border: Pixel.ink, borderWidth: 3, step: 3)
+                // 取り出し口のフタ
+                Rectangle()
+                    .fill(Color(hex: 0x5A5F6B))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                Rectangle()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(height: 3)
+                    .padding(.horizontal, 8)
+                    .offset(y: -9)
+                Text("とりだしぐち")
+                    .font(.pixel(10, fixed: true))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .frame(height: 44)
+
+            // 返却レバー
+            PixelFrame(fill: Theme.machineBodyDark, border: Pixel.ink, borderWidth: 2, step: 2)
+                .frame(width: 22, height: 22)
+                .frame(width: sidePanelWidth)
         }
-        .frame(height: 46)
+    }
+
+    // MARK: - 脚
+
+    private var feet: some View {
+        HStack {
+            Pixel.ink.frame(width: 30, height: 8)
+            Spacer()
+            Pixel.ink.frame(width: 30, height: 8)
+        }
+        .padding(.horizontal, 22)
     }
 }
 
-/// 新しく納品された缶につく「NEW」バッジ
+/// 新しく納品された缶につく「NEW」バッジ（チカチカ点滅する）
 struct NewBadge: View {
-    @State private var pulse = false
+    @State private var blink = false
 
     var body: some View {
         Text("NEW")
-            .font(.system(size: 8, weight: .black, design: .rounded))
+            .font(.pixel(8, fixed: true))
             .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(Color.red, in: Capsule())
-            .overlay(Capsule().stroke(.white, lineWidth: 1))
-            .scaleEffect(pulse ? 1.12 : 0.95)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background(Color(hex: 0xE0282E))
+            .overlay(Rectangle().strokeBorder(Color.white, lineWidth: 1.5))
+            .opacity(blink ? 1 : 0.55)
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    pulse = true
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    blink = true
                 }
             }
     }

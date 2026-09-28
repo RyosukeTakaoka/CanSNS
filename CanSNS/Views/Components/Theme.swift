@@ -11,11 +11,12 @@ extension Color {
 }
 
 enum Theme {
-    /// 自販機の本体色
-    static let machineBody = Color(hex: 0x2F5FB3)
-    static let machineBodyDark = Color(hex: 0x1D3F80)
-    static let machineTrim = Color(hex: 0xE9EEF5)
-    static let panel = Color(hex: 0x172646)
+    /// 自販機の本体色（アプリアイコンと同じ赤）
+    static let machineBody = Color(hex: 0xE0282E)
+    static let machineBodyDark = Color(hex: 0x9C1318)
+    static let machineHighlight = Color(hex: 0xFF6B5E)
+    static let machineTrim = Color(hex: 0xFFF6DA)
+    static let panel = Color(hex: 0x2A2A33)
     static let lampOn = Color(hex: 0x57F287)
     static let lampSoldOut = Color(hex: 0xFF4D4D)
     static let lampIdle = Color(hex: 0x4A5568)
@@ -49,28 +50,32 @@ struct MoodStrip: View {
 
     var body: some View {
         Text(mood.stripText)
-            .font(.system(size: fontSize, weight: .heavy, design: .rounded))
+            .font(.pixel(fontSize, fixed: true))
             .foregroundStyle(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
-            .padding(.horizontal, fontSize * 0.6)
-            .padding(.vertical, fontSize * 0.2)
-            .background(mood.color, in: RoundedRectangle(cornerRadius: fontSize * 0.3))
+            .padding(.horizontal, fontSize * 0.5)
+            .padding(.vertical, fontSize * 0.15)
+            .background(mood.color)
+            .overlay(Rectangle().strokeBorder(Pixel.ink, lineWidth: max(1, fontSize * 0.12)))
     }
 }
 
-/// 画面下にふわっと出る短いメッセージ
+/// 画面下に出る短いメッセージ（RPG のメッセージウィンドウ風）
 struct ToastView: View {
     var message: String
 
     var body: some View {
         Text(message)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white)
+            .font(.pixel(15))
+            .foregroundStyle(Pixel.windowBorder)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(.black.opacity(0.8), in: Capsule())
+            .background(
+                PixelFrame(fill: Pixel.windowFill.opacity(0.96), border: Pixel.windowBorder,
+                           borderWidth: 3, step: 4, shadow: .black.opacity(0.35))
+            )
             .padding(.horizontal, 24)
     }
 }

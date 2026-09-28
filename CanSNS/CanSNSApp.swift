@@ -4,6 +4,11 @@ import SwiftUI
 struct CanSNSApp: App {
     @State private var store = AppStore()
 
+    init() {
+        // ドットフォント（DotGothic16）を使えるようにする
+        PixelFont.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
